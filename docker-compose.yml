@@ -1,0 +1,26 @@
+services:
+  redis:
+    image: redis:7.0.1
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  chainlit-ui:
+    container_name: chainlit-ui
+    platform: linux/arm64
+    build:
+      context: ./
+    ports:
+      - "8000:8000"
+    env_file:
+      - azure-openai.env
+      - chainlit.env
+    volumes:
+      - ./config.toml:/app/.chainlit/config.toml
+      - ./aws-tl-billingpoc-user.env:/app/aws.env
+    restart: unless-stopped
+
+volumes:
+  redis-data:
