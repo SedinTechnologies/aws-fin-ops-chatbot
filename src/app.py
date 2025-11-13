@@ -1,11 +1,11 @@
-import os, redis, logging
+import os, redis, logging, random
 
 import chainlit as cl
 import chainlit.types as cl_types
 import chainlit.server as cl_server
 from mcp import ClientSession
 
-from chatclient import ChatClient
+from azure_openai_client import AzureOpenAIClient
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
 
@@ -19,6 +19,24 @@ auth = AuthManager(store)
 
 CCAPI_MCP_SERVER_VERSION = os.getenv("CCAPI_MCP_SERVER_VERSION", "latest")
 AWS_COST_EXPLORER_MCP_SERVER_VERSION = os.getenv("AWS_COST_EXPLORER_MCP_SERVER_VERSION", "latest")
+
+seed_questions = [
+  "Show my monthly AWS spend trend for the last 12 months",
+  "Compare costs for the last 3 completed months and top drivers",
+  "List top 10 resources by cost across all accounts and regions",
+  "Break down EC2 costs by instance type, region, and tag",
+  "Show S3 storage cost growth and largest buckets by expense",
+  "Detect cost anomalies in the past 30 days and explain drivers",
+  "Provide daily spend heatmap for selected services and regions",
+  "Compare projected forecast vs actual spend for the next 30 days",
+  "Show idle or underutilized resources with the highest ongoing monthly cost",
+  "List potential rightsizing candidates and expected monthly savings per resource"
+]
+
+@cl.set_starters
+async def set_starters():
+  random_seed_questions = random.sample(seed_questions, 3)
+  return [cl.Starter(label=q, message=q) for q in random_seed_questions]
 
 @cl.password_auth_callback
 async def auth_callback(username: str, password: str):
@@ -61,11 +79,9 @@ async def on_chat_start():
     )
 
   # Load existing chats for this user from Redis and set into user_session
-  chats = store.load_chats(user.identifier)
+  chats = store.load_chats(user.identifier, cl.context.session.id)
   cl.user_session.set("chats", chats)
   cl.user_session.set("messages", [])
-
-  await cl.Message(content=f"Welcome back, {user.display_name}!").send()
 
 @cl.on_chat_end
 async def on_chat_end():
@@ -103,8 +119,7 @@ async def on_message(message: cl.Message):
     await cl.Message(content="Unauthorized. Please login.").send()
     return
 
-  # Restore conversation context; keep your ChatClient usage intact
-  client = ChatClient()
+  client = AzureOpenAIClient()
   client.messages = cl.user_session.get("messages", [])
 
   # Fetch registered mcp tools if present
@@ -125,17 +140,15 @@ async def on_message(message: cl.Message):
   chats = cl.user_session.get("chats", []) or []
   if not chats:
     # create first chat
-    chat = {"id": str(os.urandom(8).hex()), "title": message.content[:80], "messages": client.messages}
+    store.store_session(user.identifier, cl.context.session.id, client.title)
+    chat = {"title": client.title, "messages": client.messages}
     chats.insert(0, chat)
   else:
     # update active chat (0)
     chats[0]["messages"] = client.messages
-    # optionally update title
-    if len(chats[0].get("messages", [])) > 0:
-      chats[0]["title"] = chats[0]["messages"][0].get("content", "")[:80] if isinstance(chats[0]["messages"][0], dict) else str(chats[0]["messages"][0])[:80]
 
   # Save chats in Redis via store
-  store.save_chats(user.identifier, chats)
+  store.save_chats(user.identifier, cl.context.session.id, chats)
   cl.user_session.set("chats", chats)
 
 async def create_new_mcp_connection(mcp_name: str, command: str):

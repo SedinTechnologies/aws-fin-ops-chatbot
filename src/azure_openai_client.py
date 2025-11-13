@@ -1,18 +1,47 @@
+import os, json, traceback, logging
 import chainlit as cl
-import os, json, traceback
 from mcp.types import TextContent, ImageContent
 from openai import AsyncAzureOpenAI
 
-SYSTEM_PROMPT = "you are a helpful assistant."
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class ChatClient:
+SYSTEM_PROMPT = """
+You are an AI assistant that helps users analyze their AWS billing and cloud resources using AWS Cost Explorer and Cloud Control APIs. Your scope is strictly limited to AWS billing, cost analysis, and resource usage insights.
+
+Guidelines:
+- Always provide information only from AWS Cost Explorer and Cloud Control APIs.
+- Do not answer any questions unrelated to AWS billing or resources.
+- Do not attempt to provide opinions, recommendations, or perform actions outside of AWS billing or resources.
+- If the user asks unrelated questions, respond: "I can only help with AWS billing and resource information."
+- Use clear and concise responses.
+- You may filter, aggregate, or summarize costs as requested.
+
+Response rules:
+1. Always respond in pure JSON. Never include explanations or extra text.
+2. JSON format:
+   {
+     "title": "string",
+     "content": "string",
+     "next_questions": ["string", "string", "string"]
+   }
+3. For the first user message, generate a concise professional title (≤8 words).
+   Examples: "AWS Cost Summary - Q3 2025", "Top Cost Drivers - Last 3 Months"
+4. For subsequent messages, `title` should be removed
+5. `next_questions` must always contain up to 3 concise, relevant, follow-up questions
+   (e.g. "Show service breakdown", "Compare EC2 vs S3", "View last month's spend")
+6. Never break the JSON structure and always send minified valid JSON
+"""
+
+class AzureOpenAIClient:
   def __init__(self) -> None:
     self.deployment_name = os.environ["AZURE_OPENAI_MODEL"]
     self.client = AsyncAzureOpenAI(
-        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-        api_key=os.environ["AZURE_OPENAI_API_KEY"],
-        api_version=os.environ["OPENAI_API_VERSION"]
-      )
+      azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+      api_key=os.environ["AZURE_OPENAI_API_KEY"],
+      api_version=os.environ["OPENAI_API_VERSION"]
+    )
+    self.title = None
     self.messages = []
     self.system_prompt = SYSTEM_PROMPT
     self.active_streams = []  # Track active response streams
@@ -26,10 +55,8 @@ class ChatClient:
         pass
     self.active_streams = []
 
-  async def process_response_stream(self, response_stream, tools):
-    """
-    Process response stream to handle function calls without recursion.
-    """
+  async def process_response_stream(self, response_stream):
+    """Process response stream to handle function calls without recursion"""
     function_arguments = ""
     function_name = ""
     tool_call_id = ""
@@ -70,7 +97,6 @@ class ChatClient:
         # Check if we've reached the end of a tool call
         if finish_reason == "tool_calls" and is_collecting_function_args:
           # Process the current tool call
-          print(f"function_name: {function_name} function_arguments: {function_arguments}")
           function_args = json.loads(function_arguments)
           mcp_tools = cl.user_session.get("mcp_tools", {})
           mcp_name = None
@@ -101,7 +127,6 @@ class ChatClient:
 
           # Call the tool and add response to messages
           func_response = await call_tool(mcp_name, function_name, function_args)
-          print(f"Function Response: {json.loads(func_response)}")
           self.messages.append({
             "tool_call_id": tool_call_id,
             "role": "tool",
@@ -119,8 +144,18 @@ class ChatClient:
           # Add final assistant message if there's content
           if collected_messages:
             final_content = ''.join([msg for msg in collected_messages if msg is not None])
-            if final_content.strip():
-              self.messages.append({"role": "assistant", "content": final_content})
+            logger.info(f"Final assistant content: {final_content}")
+            if not final_content or len(final_content) == 0:
+              break
+            msg_json = json.loads(final_content)  # Validate JSON
+            if not self.title and msg_json.get("title", None):
+              self.title = msg_json["title"]
+            final_msg = {
+              "role": "assistant",
+              "content": msg_json["content"],
+              "next_questions": msg_json["next_questions"]
+            }
+            self.messages.append(final_msg)
 
           # Remove from active streams after normal completion
           if response_stream in self.active_streams:
@@ -145,9 +180,7 @@ class ChatClient:
     self.last_function_name = function_name if tool_called else None
 
   async def generate_response(self, human_input, tools):
-
     self.messages.append({"role": "user", "content": human_input})
-    print(f"self.messages: {self.messages}")
     # Handle multiple sequential function calls in a loop rather than recursively
     while True:
       response_stream = await self.client.chat.completions.create(
@@ -160,7 +193,7 @@ class ChatClient:
 
       try:
         # Stream and process the response
-        async for token in self._stream_and_process(response_stream, tools):
+        async for token in self._stream_and_process(response_stream):
           yield token
 
         # Check instance variables after streaming is complete
@@ -172,14 +205,14 @@ class ChatClient:
         await self._cleanup_streams()
         return
 
-  async def _stream_and_process(self, response_stream, tools):
+  async def _stream_and_process(self, response_stream):
     """Helper method to yield tokens and return process result"""
     # Initialize instance variables before processing
     self.tool_called = False
     self.last_function_name = None
     self.last_error = None
 
-    async for token in self.process_response_stream(response_stream, tools):
+    async for token in self.process_response_stream(response_stream):
       yield token
 
     # Don't return values in an async generator - values are already stored in instance variables

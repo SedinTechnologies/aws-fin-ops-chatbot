@@ -1,4 +1,4 @@
-import json
+import json, time
 from abc import ABC, abstractmethod
 
 class SessionStore(ABC):
@@ -11,11 +11,19 @@ class SessionStore(ABC):
     pass
 
   @abstractmethod
-  def save_chats(self, email: str, chats: list):
+  def store_session(self, email: str, session_id: str):
     pass
 
   @abstractmethod
-  def load_chats(self, email: str) -> list:
+  def retrieve_sessions(self, email: str) -> list:
+    pass
+
+  @abstractmethod
+  def save_chats(self, email: str, session_id: str, chats: list):
+    pass
+
+  @abstractmethod
+  def load_chats(self, email: str, session_id: str) -> list:
     pass
 
 
@@ -26,8 +34,11 @@ class RedisSessionStore(SessionStore):
   def _user_key(self, email):
     return f"user:{email}"
 
-  def _chats_key(self, email):
-    return f"chats:{email}"
+  def _sessions_key(self, email):
+    return f"sessions:{email}"
+
+  def _chats_key(self, email, session_id):
+    return f"chats:{email}:{session_id}"
 
   def _mcp_key(self, email, mcp_name):
     return f"mcp:{email}:{mcp_name}"
@@ -39,11 +50,29 @@ class RedisSessionStore(SessionStore):
   def create_user(self, email: str, user_data: dict):
     self.rc.set(self._user_key(email), json.dumps(user_data))
 
-  def save_chats(self, email: str, chats: list):
-    self.rc.set(self._chats_key(email), json.dumps(chats))
+  def store_session(self, email: str, session_id: str, title: str):
+    self.rc.sadd(self._sessions_key(email), json.dumps({
+      "session_id": session_id,
+      "title": title,
+      "timestamp": int(time.time())
+    }))
 
-  def load_chats(self, email: str) -> list:
-    val = self.rc.get(self._chats_key(email))
+  def retrieve_sessions(self, email: str) -> list:
+    sessions = self.rc.smembers(self._sessions_key(email))
+    return [json.loads(s) for s in sessions] if sessions else []
+
+  def save_chats(self, email: str, session_id: str, chats: list):
+    # store only user & assistant messages to reduce storage
+    chats_required = []
+    for chat in chats:
+      for msg in chat["messages"]:
+        if msg.get("role") not in ["user", "assistant"] or msg.get("content", None) is None:
+          continue
+        chats_required.append(msg)
+    self.rc.set(self._chats_key(email, session_id), json.dumps(chats_required))
+
+  def load_chats(self, email: str, session_id: str) -> list:
+    val = self.rc.get(self._chats_key(email, session_id))
     return json.loads(val) if val else []
 
   def save_mcp_connection(self, email: str, mcp_name: str, conn_data: dict):
