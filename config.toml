@@ -89,7 +89,7 @@ reaction_on_message_received = false
 
 [UI]
 # Name of the assistant.
-name = "FinOpsBot"
+name = "AwsFinOpsBot"
 
 default_theme = "light"
 

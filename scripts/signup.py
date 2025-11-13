@@ -18,4 +18,4 @@ def store_user(email: str, name: str, password: str, aws_role_arn: str):
 
 # Example usage
 if __name__ == "__main__":
-  store_user("madhav@tarkalabs.com", "Madhava Reddy SV", "MySecurePass123!", "arn:aws:iam::260741046218:role/FinOpsGPTRole")
+  store_user("madhav@tarkalabs.com", "Madhava Reddy SV", "MySecurePass123!", "arn:aws:iam::260741046218:role/AwsFinOpsGPTRole")
