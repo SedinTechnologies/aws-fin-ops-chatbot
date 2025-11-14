@@ -26,7 +26,6 @@ class SessionStore(ABC):
   def load_chats(self, email: str, session_id: str) -> list:
     pass
 
-
 class RedisSessionStore(SessionStore):
   def __init__(self, redis_client):
     self.rc = redis_client
@@ -62,14 +61,7 @@ class RedisSessionStore(SessionStore):
     return [json.loads(s) for s in sessions] if sessions else []
 
   def save_chats(self, email: str, session_id: str, chats: list):
-    # store only user & assistant messages to reduce storage
-    chats_required = []
-    for chat in chats:
-      for msg in chat["messages"]:
-        if msg.get("role") not in ["user", "assistant"] or msg.get("content", None) is None:
-          continue
-        chats_required.append(msg)
-    self.rc.set(self._chats_key(email, session_id), json.dumps(chats_required))
+    self.rc.set(self._chats_key(email, session_id), json.dumps(chats))
 
   def load_chats(self, email: str, session_id: str) -> list:
     val = self.rc.get(self._chats_key(email, session_id))

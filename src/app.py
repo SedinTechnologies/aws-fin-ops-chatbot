@@ -1,4 +1,4 @@
-import os, redis, logging, random
+import os, redis, logging, random, traceback
 
 import chainlit as cl
 import chainlit.types as cl_types
@@ -21,14 +21,14 @@ CCAPI_MCP_SERVER_VERSION = os.getenv("CCAPI_MCP_SERVER_VERSION", "latest")
 AWS_COST_EXPLORER_MCP_SERVER_VERSION = os.getenv("AWS_COST_EXPLORER_MCP_SERVER_VERSION", "latest")
 
 seed_questions = [
-  "Show my monthly AWS spend trend for the last 12 months",
+  "Show my monthly AWS spend trend for the last 6 months",
   "Compare costs for the last 3 completed months and top drivers",
   "List top 10 resources by cost across all accounts and regions",
   "Break down EC2 costs by instance type, region, and tag",
   "Show S3 storage cost growth and largest buckets by expense",
   "Detect cost anomalies in the past 30 days and explain drivers",
   "Provide daily spend heatmap for selected services and regions",
-  "Compare projected forecast vs actual spend for the next 30 days",
+  "Compare projected forecast vs actual spend for this month",
   "Show idle or underutilized resources with the highest ongoing monthly cost",
   "List potential rightsizing candidates and expected monthly savings per resource"
 ]
@@ -81,7 +81,6 @@ async def on_chat_start():
   # Load existing chats for this user from Redis and set into user_session
   chats = store.load_chats(user.identifier, cl.context.session.id)
   cl.user_session.set("chats", chats)
-  cl.user_session.set("messages", [])
 
 @cl.on_chat_end
 async def on_chat_end():
@@ -113,43 +112,58 @@ async def on_mcp_connect(connection, session: ClientSession):
   logger.info(f"Registered tools from MCP '{connection.name}' for Session ID: {cl.context.session.id}")
 
 @cl.on_message
-async def on_message(message: cl.Message):
-  user = cl.user_session.get("user")
-  if not user:
-    await cl.Message(content="Unauthorized. Please login.").send()
-    return
+async def new_message(message: cl.Message):
+  try:
+    user = cl.user_session.get("user")
+    if not user:
+      await cl.Message(content="Unauthorized. Please login.").send()
+      return
 
-  client = AzureOpenAIClient()
-  client.messages = cl.user_session.get("messages", [])
+    client = AzureOpenAIClient()
+    client.messages = cl.user_session.get("messages", [client.system_prompt])
 
-  # Fetch registered mcp tools if present
-  mcp_tools = cl.user_session.get("mcp_tools", {})
-  tools = []
-  for _, ts in mcp_tools.items():
-    tools.extend(ts)
-  tools = [{"type": "function", "function": t} for t in tools]
+    # Fetch registered mcp tools if present
+    mcp_tools = cl.user_session.get("mcp_tools", {})
+    tools = []
+    for _, ts in mcp_tools.items():
+      tools.extend(ts)
+    tools = [{"type": "function", "function": t} for t in tools]
 
-  msg = cl.Message(content="")
-  async for token in client.generate_response(human_input=message.content, tools=tools):
-    await msg.stream_token(token)
+    content, next_questions = await client.generate_response(query=message.content, tools=tools)
+    msg_actions = [
+      cl.Action(
+        name     = "next_question_click",
+        icon     = nq["icon"],
+        label    = nq["question"],
+        payload  = { "question": nq["question"] }
+      ) for nq in next_questions
+    ]
+    await cl.Message(content=content, actions=msg_actions).send()
 
-  # Persist updated messages to session and to per-user chats
-  cl.user_session.set("messages", client.messages)
+    # Persist updated messages to session and to per-user chats
+    cl.user_session.set("messages", client.messages)
 
-  # Append to current chat; simple approach: keep single active chat (index 0)
-  chats = cl.user_session.get("chats", []) or []
-  if not chats:
-    # create first chat
-    store.store_session(user.identifier, cl.context.session.id, client.title)
-    chat = {"title": client.title, "messages": client.messages}
-    chats.insert(0, chat)
-  else:
-    # update active chat (0)
-    chats[0]["messages"] = client.messages
+    # Append to current chat; simple approach: keep single active chat (index 0)
+    chats = cl.user_session.get("chats", []) or []
+    if not chats:
+      # create first chat
+      store.store_session(user.identifier, cl.context.session.id, client.title)
+      chat = {"title": client.title, "messages": client.messages}
+      chats.insert(0, chat)
+    else:
+      # update active chat (0)
+      chats[0]["messages"] = client.messages
 
-  # Save chats in Redis via store
-  store.save_chats(user.identifier, cl.context.session.id, chats)
-  cl.user_session.set("chats", chats)
+    # Save chats in Redis via store
+    store.save_chats(user.identifier, cl.context.session.id, chats)
+    cl.user_session.set("chats", chats)
+  except Exception as e:
+    logger.error(f"Error while generating response: {traceback.print_exc()}")
+    await cl.Message("An error occurred while generating the response! Please contact admin team!").send()
+
+@cl.action_callback("next_question_click")
+async def handle_action(action: cl.Action):
+  await cl.Message(action.payload["question"]).send()
 
 async def create_new_mcp_connection(mcp_name: str, command: str):
   conn_request = cl_types.ConnectStdioMCPRequest(

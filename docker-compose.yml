@@ -19,7 +19,7 @@ services:
       - chainlit.env
     volumes:
       - ./config.toml:/app/.chainlit/config.toml
-      - ./aws-tl-billingpoc-user.env:/app/aws.env
+      - ./aws-rf-billingpoc-user.env:/app/aws.env
     restart: unless-stopped
 
 volumes:
