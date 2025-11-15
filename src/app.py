@@ -1,10 +1,12 @@
-import os, redis, logging, random, traceback
+import os, redis, logging, random, traceback, uuid
 
 import chainlit as cl
-import chainlit.types as cl_types
-import chainlit.server as cl_server
 from mcp import ClientSession
 
+from mcp_tool_helper import (
+  fetch_registered_mcp_tools_for_user,
+  deregister_mcp_tools_for_user
+)
 from azure_openai_client import AzureOpenAIClient
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
@@ -65,36 +67,20 @@ async def on_chat_start():
   # When a user logs in, Chainlit stores user info in cl.user_session under "user"
   user = cl.user_session.get("user")
   if not user:
-    # If not logged in, ask to login; Chainlit will show login UI because require_login=true
+    logger.info("User not logged in. Showing login page...")
     await cl.Message(content="Please login to continue.").send()
     return
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
-  # Create MCP connection to AWS Cost Explorer MCP Server
-  for mcp_conn in user.metadata.get("mcp_connections", []):
-    logger.info(f"Establishing MCP connection: {mcp_conn['name']} Session ID: {cl.context.session.id}")
-    await create_new_mcp_connection(
-      mcp_name=mcp_conn["name"],
-      command=mcp_conn["command"]
-    )
-
   # Load existing chats for this user from Redis and set into user_session
-  chats = store.load_chats(user.identifier, cl.context.session.id)
-  cl.user_session.set("chats", chats)
+  all_chats = store.retrieve_all_chats(user.identifier)
+  # TODO populate all chats in ui sidebar
 
 @cl.on_chat_end
 async def on_chat_end():
   user = cl.user_session.get("user")
   if user:
-    for mcp_conn in user.metadata.get("mcp_connections", []):
-      logger.info(f"Disconnecting MCP connection: {mcp_conn['name']} Session ID: {cl.context.session.id}")
-      await cl_server.disconnect_mcp(
-        cl_types.DisconnectMCPRequest(
-          sessionId=cl.context.session.id,
-          name=mcp_conn["name"]
-        ),
-        cl.context.session.user
-      )
+    deregister_mcp_tools_for_user(user)
     logger.info(f"User {user.display_name} session ended with ID: {cl.context.session.id}")
 
 @cl.on_mcp_connect
@@ -119,15 +105,13 @@ async def new_message(message: cl.Message):
       await cl.Message(content="Unauthorized. Please login.").send()
       return
 
+    tools = await fetch_registered_mcp_tools_for_user(user)
     client = AzureOpenAIClient()
-    client.messages = cl.user_session.get("messages", [client.system_prompt])
+    chat_id = cl.user_session.get("chat_id", None)
 
-    # Fetch registered mcp tools if present
-    mcp_tools = cl.user_session.get("mcp_tools", {})
-    tools = []
-    for _, ts in mcp_tools.items():
-      tools.extend(ts)
-    tools = [{"type": "function", "function": t} for t in tools]
+    # Update client messages if an old chat is selected
+    if chat_id:
+      client.messages = store.fetch_full_chat_messages(user.identifier, cl.user_session.get("chat_id"))
 
     content, next_questions = await client.generate_response(query=message.content, tools=tools)
     msg_actions = [
@@ -138,38 +122,23 @@ async def new_message(message: cl.Message):
         payload  = { "question": nq["question"] }
       ) for nq in next_questions
     ]
+    # Send the response and next actions to user
     await cl.Message(content=content, actions=msg_actions).send()
 
-    # Persist updated messages to session and to per-user chats
-    cl.user_session.set("messages", client.messages)
+    # Store chat info & it's messages
+    if not chat_id: # new chat
+      chat_id = str(uuid.uuid4())
+      store.save_chat_info(user.identifier, chat_id, client.title)
+      # Storing chat_id in session to track history
+      cl.user_session.set("chat_id", chat_id)
 
-    # Append to current chat; simple approach: keep single active chat (index 0)
-    chats = cl.user_session.get("chats", []) or []
-    if not chats:
-      # create first chat
-      store.store_session(user.identifier, cl.context.session.id, client.title)
-      chat = {"title": client.title, "messages": client.messages}
-      chats.insert(0, chat)
-    else:
-      # update active chat (0)
-      chats[0]["messages"] = client.messages
-
-    # Save chats in Redis via store
-    store.save_chats(user.identifier, cl.context.session.id, chats)
-    cl.user_session.set("chats", chats)
-  except Exception as e:
-    logger.error(f"Error while generating response: {traceback.print_exc()}")
-    await cl.Message("An error occurred while generating the response! Please contact admin team!").send()
+    # Save chat messages into database store
+    store.save_chat_messages(user.identifier, chat_id, client.messages)
+  except Exception:
+    logger.error(f"Error while processing: {traceback.print_exc()}")
+    await cl.Message("An error occurred while processing! Please contact admin team!").send()
 
 @cl.action_callback("next_question_click")
-async def handle_action(action: cl.Action):
+async def next_question_click_action_callback(action: cl.Action):
+  # TODO handle this as regular user input and start processing
   await cl.Message(action.payload["question"]).send()
-
-async def create_new_mcp_connection(mcp_name: str, command: str):
-  conn_request = cl_types.ConnectStdioMCPRequest(
-    sessionId=cl.context.session.id,
-    clientType="stdio",
-    name=mcp_name,
-    fullCommand=command
-  )
-  await cl_server.connect_mcp(conn_request, cl.context.session.user)

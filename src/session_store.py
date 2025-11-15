@@ -3,77 +3,63 @@ from abc import ABC, abstractmethod
 
 class SessionStore(ABC):
   @abstractmethod
-  def get_user(self, email: str) -> dict | None:
+  def get_user(self, user_id: str) -> dict | None:
     pass
 
   @abstractmethod
-  def create_user(self, email: str, user_data: dict):
+  def create_user(self, id: str, user_data: dict):
     pass
 
   @abstractmethod
-  def store_session(self, email: str, session_id: str):
+  def retrieve_all_chats(self, user_id: str) -> list:
     pass
 
   @abstractmethod
-  def retrieve_sessions(self, email: str) -> list:
+  def save_chat_info(self, user_id: str, chat_id: str, title: str) -> list:
     pass
 
   @abstractmethod
-  def save_chats(self, email: str, session_id: str, chats: list):
+  def fetch_full_chat_messages(self, user_id: str, chat_id: str):
     pass
 
   @abstractmethod
-  def load_chats(self, email: str, session_id: str) -> list:
+  def save_chat_messages(self, user_id: str, chat_id: str, chat_messages: list):
     pass
 
 class RedisSessionStore(SessionStore):
   def __init__(self, redis_client):
     self.rc = redis_client
 
-  def _user_key(self, email):
-    return f"user:{email}"
+  def _user_key(self, user_id):
+    return f"user:{user_id}"
 
-  def _sessions_key(self, email):
-    return f"sessions:{email}"
+  def _all_chats_key(self, user_id):
+    return f"chats:{user_id}"
 
-  def _chats_key(self, email, session_id):
-    return f"chats:{email}:{session_id}"
+  def _chat_key(self, user_id, chat_id):
+    return f"chat:{user_id}:{chat_id}"
 
-  def _mcp_key(self, email, mcp_name):
-    return f"mcp:{email}:{mcp_name}"
-
-  def get_user(self, email: str):
-    val = self.rc.get(self._user_key(email))
+  def get_user(self, user_id: str):
+    val = self.rc.get(self._user_key(user_id))
     return json.loads(val) if val else None
 
-  def create_user(self, email: str, user_data: dict):
-    self.rc.set(self._user_key(email), json.dumps(user_data))
+  def create_user(self, user_id: str, user_data: dict):
+    self.rc.set(self._user_key(user_id), json.dumps(user_data))
 
-  def store_session(self, email: str, session_id: str, title: str):
-    self.rc.sadd(self._sessions_key(email), json.dumps({
-      "session_id": session_id,
+  def retrieve_all_chats(self, user_id: str) -> list:
+    chats = self.rc.smembers(self._all_chats_key(user_id))
+    return [json.loads(c) for c in chats] if chats else []
+
+  def save_chat_info(self, user_id: str, chat_id: str, title: str):
+    self.rc.sadd(self._all_chats_key(user_id), json.dumps({
+      "chat_id": chat_id,
       "title": title,
-      "timestamp": int(time.time())
+      "created_at": int(time.time())
     }))
 
-  def retrieve_sessions(self, email: str) -> list:
-    sessions = self.rc.smembers(self._sessions_key(email))
-    return [json.loads(s) for s in sessions] if sessions else []
-
-  def save_chats(self, email: str, session_id: str, chats: list):
-    self.rc.set(self._chats_key(email, session_id), json.dumps(chats))
-
-  def load_chats(self, email: str, session_id: str) -> list:
-    val = self.rc.get(self._chats_key(email, session_id))
+  def fetch_full_chat_messages(self, user_id: str, chat_id: str) -> list:
+    val = self.rc.get(self._chat_key(user_id, chat_id))
     return json.loads(val) if val else []
 
-  def save_mcp_connection(self, email: str, mcp_name: str, conn_data: dict):
-    # Store MCP connection details as JSON string in Redis
-    self.rc.set(self._mcp_key(email, mcp_name), json.dumps(conn_data))
-
-  def load_mcp_connection(self, email: str, mcp_name: str):
-    val = self.rc.get(self._mcp_key(email, mcp_name))
-    return json.loads(val) if val else None
-
-  def delete_mcp_connection(self, email: str, mcp_name: str):
-    self.rc.delete(self._mcp_key(email, mcp_name))
+  def save_chat_messages(self, user_id: str, chat_id: str, messages: list):
+    self.rc.set(self._chat_key(user_id, chat_id), json.dumps(messages))

@@ -24,9 +24,8 @@ class AzureOpenAIClient:
       api_key=os.environ["AZURE_OPENAI_API_KEY"],
       api_version=os.environ["OPENAI_API_VERSION"]
     )
-    self.messages = []
+    self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     self.title = None
-    self.system_prompt = {"role": "system", "content": SYSTEM_PROMPT}
 
   async def generate_response(self, query, tools):
     try:
@@ -36,7 +35,7 @@ class AzureOpenAIClient:
       while True:
         resp = await self.client.chat.completions.create(
           model=self.deployment_name,
-          messages=[self.system_prompt] + self.messages,
+          messages=self.messages,
           tools=tools,
           stream=False,
           parallel_tool_calls=False,
