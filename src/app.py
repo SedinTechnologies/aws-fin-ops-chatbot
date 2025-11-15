@@ -80,7 +80,7 @@ async def on_chat_start():
 async def on_chat_end():
   user = cl.user_session.get("user")
   if user:
-    deregister_mcp_tools_for_user(user)
+    await deregister_mcp_tools_for_user(user)
     logger.info(f"User {user.display_name} session ended with ID: {cl.context.session.id}")
 
 @cl.on_mcp_connect
