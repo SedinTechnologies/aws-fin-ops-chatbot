@@ -18,17 +18,19 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
-  prisma:
-    build:
-      context: .
-      dockerfile: prisma.Dockerfile
-    stop_grace_period: 0s
-    depends_on:
-      - postgres
-    volumes:
-      - ./prisma/:/app/
-    environment:
-      - DATABASE_URL=postgresql://root:root@postgres:5432/postgres
+  # Only run this when you're running for the first time
+  # Otherwise, we don't need to run it always. Just used for data migration.
+  # data-migration:
+  #   build:
+  #     context: .
+  #     dockerfile: prisma.Dockerfile
+  #   stop_grace_period: 0s
+  #   depends_on:
+  #     - postgres
+  #   volumes:
+  #     - ./prisma/:/app/
+  #   environment:
+  #     - DATABASE_URL=postgresql://root:root@postgres:5432/postgres
 
   localstack:
     image: localstack/localstack:4.10.0
@@ -41,7 +43,10 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
 
   chainlit-ui:
-    platform: linux/arm64
+    depends_on:
+      - redis
+      - postgres
+      - localstack
     build:
       context: ./
     ports:

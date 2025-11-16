@@ -7,4 +7,4 @@ RUN apk add --no-cache openssl
 # Install Prisma CLI globally
 RUN npm install -g prisma@6.19.0
 
-ENTRYPOINT [ "sleep", "infinity" ]
+ENTRYPOINT [ "npx", "prisma", "migrate", "deploy" ]
