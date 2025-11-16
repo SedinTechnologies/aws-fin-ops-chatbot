@@ -71,6 +71,7 @@ async def on_chat_start():
     await cl.Message(content="Please login to continue.").send()
     return
   cl.user_session.set("client", AzureOpenAIClient())
+  cl.user_session.set("mcp_tools", {})
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
 @cl.on_chat_resume
@@ -87,6 +88,7 @@ async def on_chat_resume(thread: ThreadDict):
   client = AzureOpenAIClient()
   client.messages.extend(memory)
   cl.user_session.set("client", client)
+  cl.user_session.set("mcp_tools", {})
 
   # Save the restored memory/context back into the user session
   cl.user_session.set("memory", memory)
@@ -96,6 +98,7 @@ async def on_chat_end():
   user = cl.user_session.get("user")
   if user:
     await deregister_mcp_tools_for_user(user)
+    cl.user_session.set("mcp_tools", {})
     logger.info(f"User {user.display_name} session ended with ID: {cl.context.session.id}")
 
 @cl.on_mcp_connect

@@ -73,7 +73,7 @@ class AzureOpenAIClient:
           continue
         elif msg.content: # Final assistant response
           final_json = json.loads(msg.content)
-          logger.info(f"Response received from model: {final_json}")
+          # logger.info(f"Response received from model: {final_json}")
           if not self.title and final_json.get("title"):
             self.title = final_json["title"]
 

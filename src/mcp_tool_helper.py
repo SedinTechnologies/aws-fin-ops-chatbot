@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 @cl.step(type="tool")
 async def call_tool(tool_name, tool_args):
   try:
+    logger.info(f"Session ID: {cl.context.session.id} Calling tool: {tool_name} with args: {tool_args}")
     resp_items = []
     mcp_tools = cl.user_session.get("mcp_tools", {})
     mcp_name = None
