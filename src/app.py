@@ -1,6 +1,7 @@
-import os, redis, logging, random, traceback, uuid
+import os, redis, logging, random, traceback
 
 import chainlit as cl
+from chainlit.types import ThreadDict
 from mcp import ClientSession
 
 from mcp_tool_helper import (
@@ -46,7 +47,7 @@ async def auth_callback(username: str, password: str):
   if not user:
     return None
   return cl.User(
-    identifier=user["email"],
+    identifier=user["identifier"],
     display_name=user["name"],
     metadata={
       "mcp_connections": [
@@ -69,7 +70,26 @@ async def on_chat_start():
     logger.info("User not logged in. Showing login page...")
     await cl.Message(content="Please login to continue.").send()
     return
+  cl.user_session.set("client", AzureOpenAIClient())
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
+
+@cl.on_chat_resume
+async def on_chat_resume(thread: ThreadDict):
+  messages = thread["steps"]
+  memory = []
+  for message in messages:
+    if message["type"] == "user_message":
+      memory.append({"role": "user", "content": message["output"]})
+    elif message["type"] == "assistant_message":
+      memory.append({"role": "assistant", "content": message["output"]})
+
+  # Updating client with the old messages
+  client = AzureOpenAIClient()
+  client.messages.extend(memory)
+  cl.user_session.set("client", client)
+
+  # Save the restored memory/context back into the user session
+  cl.user_session.set("memory", memory)
 
 @cl.on_chat_end
 async def on_chat_end():
@@ -101,7 +121,8 @@ async def new_message(message: cl.Message):
       return
 
     tools = await fetch_registered_mcp_tools_for_user(user)
-    client = AzureOpenAIClient()
+    client: AzureOpenAIClient = cl.user_session.get("client")
+    client.messages.extend(cl.user_session.get("memory", [])) # Add existing messages if any
 
     content, next_questions = await client.generate_response(query=message.content, tools=tools)
     msg_actions = [
@@ -112,6 +133,9 @@ async def new_message(message: cl.Message):
         payload  = { "question": nq["question"] }
       ) for nq in next_questions
     ]
+
+    # Store the messages back in session
+    cl.user_session.set("memory", client.messages)
     # Send the response and next actions to user
     await cl.Message(content=content, actions=msg_actions).send()
   except Exception:

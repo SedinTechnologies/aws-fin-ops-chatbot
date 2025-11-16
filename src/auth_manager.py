@@ -14,8 +14,8 @@ class AuthManager:
     except Exception:
       return False
 
-  def authenticate(self, user_name: str, password: str) -> dict | None:
-    user = self.store.get_user(user_name)
+  def authenticate(self, user_id: str, password: str) -> dict | None:
+    user = self.store.get_user(user_id)
     if not user:
       return None
     if not self.verify_password(password, user["password_hash"]):
