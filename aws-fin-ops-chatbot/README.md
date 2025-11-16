@@ -153,12 +153,6 @@ docker compose ps
 
 ---
 
-## License
-
-This project can follow standard open‑source licensing such as **MIT**, **Apache‑2.0**, or as defined by the repository owner.
-
----
-
 ## Credits
 
 * **Azure OpenAI** for LLM capabilities
