@@ -1,6 +1,10 @@
-import bcrypt, json, redis
+import os, bcrypt, json, redis
 
-redis_client = redis.Redis(host="redis", port=6379, db=0)
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = os.getenv("REDIS_PORT", 6379)
+REDIS_DB = os.getenv("REDIS_DB", 0)
+
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 
 def hash_password(plain: str) -> str:
   return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()

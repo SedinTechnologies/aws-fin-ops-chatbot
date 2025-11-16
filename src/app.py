@@ -64,17 +64,12 @@ async def auth_callback(username: str, password: str):
 
 @cl.on_chat_start
 async def on_chat_start():
-  # When a user logs in, Chainlit stores user info in cl.user_session under "user"
   user = cl.user_session.get("user")
   if not user:
     logger.info("User not logged in. Showing login page...")
     await cl.Message(content="Please login to continue.").send()
     return
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
-
-  # Load existing chats for this user from Redis and set into user_session
-  all_chats = store.retrieve_all_chats(user.identifier)
-  # TODO populate all chats in ui sidebar
 
 @cl.on_chat_end
 async def on_chat_end():
@@ -107,11 +102,6 @@ async def new_message(message: cl.Message):
 
     tools = await fetch_registered_mcp_tools_for_user(user)
     client = AzureOpenAIClient()
-    chat_id = cl.user_session.get("chat_id", None)
-
-    # Update client messages if an old chat is selected
-    if chat_id:
-      client.messages = store.fetch_full_chat_messages(user.identifier, cl.user_session.get("chat_id"))
 
     content, next_questions = await client.generate_response(query=message.content, tools=tools)
     msg_actions = [
@@ -124,16 +114,6 @@ async def new_message(message: cl.Message):
     ]
     # Send the response and next actions to user
     await cl.Message(content=content, actions=msg_actions).send()
-
-    # Store chat info & it's messages
-    if not chat_id: # new chat
-      chat_id = str(uuid.uuid4())
-      store.save_chat_info(user.identifier, chat_id, client.title)
-      # Storing chat_id in session to track history
-      cl.user_session.set("chat_id", chat_id)
-
-    # Save chat messages into database store
-    store.save_chat_messages(user.identifier, chat_id, client.messages)
   except Exception:
     logger.error(f"Error while processing: {traceback.print_exc()}")
     await cl.Message("An error occurred while processing! Please contact admin team!").send()

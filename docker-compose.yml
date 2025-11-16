@@ -7,8 +7,40 @@ services:
     volumes:
       - redis-data:/data
 
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  prisma:
+    build:
+      context: .
+      dockerfile: prisma.Dockerfile
+    stop_grace_period: 0s
+    depends_on:
+      - postgres
+    volumes:
+      - ./prisma/:/app/
+    environment:
+      - DATABASE_URL=postgresql://root:root@postgres:5432/postgres
+
+  localstack:
+    image: localstack/localstack:4.10.0
+    environment:
+      SERVICES: s3
+    ports:
+      - 4566:4566
+    volumes:
+      - ./localstack-s3-setup.sh:/etc/localstack/init/ready.d/script.sh
+      - "/var/run/docker.sock:/var/run/docker.sock"
+
   chainlit-ui:
-    container_name: chainlit-ui
     platform: linux/arm64
     build:
       context: ./
@@ -18,9 +50,9 @@ services:
       - azure-openai.env
       - chainlit.env
     volumes:
-      - ./config.toml:/app/.chainlit/config.toml
+      - ./chainlit-config.toml:/app/.chainlit/config.toml
       - ./aws-rf-billingpoc-user.env:/app/aws.env
-    restart: unless-stopped
 
 volumes:
   redis-data:
+  postgres-data:
