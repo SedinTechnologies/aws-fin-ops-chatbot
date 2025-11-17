@@ -11,6 +11,7 @@ from mcp_tool_helper import (
 from azure_openai_client import AzureOpenAIClient
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
+from guardrails import GuardrailEngine, GuardrailViolation
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -70,7 +71,10 @@ async def on_chat_start():
     logger.info("User not logged in. Showing login page...")
     await cl.Message(content="Please login to continue.").send()
     return
-  cl.user_session.set("client", AzureOpenAIClient())
+  guardrails = GuardrailEngine.from_env()
+  cl.user_session.set("guardrails", guardrails)
+  client = AzureOpenAIClient(guardrails=guardrails)
+  cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
@@ -85,7 +89,9 @@ async def on_chat_resume(thread: ThreadDict):
       memory.append({"role": "assistant", "content": message["output"]})
 
   # Updating client with the old messages
-  client = AzureOpenAIClient()
+  guardrails = GuardrailEngine.from_env()
+  cl.user_session.set("guardrails", guardrails)
+  client = AzureOpenAIClient(guardrails=guardrails)
   client.messages.extend(memory)
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
@@ -125,9 +131,28 @@ async def new_message(message: cl.Message):
 
     tools = await fetch_registered_mcp_tools_for_user(user)
     client: AzureOpenAIClient = cl.user_session.get("client")
+    guardrails: GuardrailEngine = cl.user_session.get("guardrails")
+
+    guardrails.guard_input(
+      session_id=cl.context.session.id,
+      user_id=user.identifier,
+      text=message.content
+    )
+
     client.messages.extend(cl.user_session.get("memory", [])) # Add existing messages if any
 
-    content, next_questions = await client.generate_response(query=message.content, tools=tools)
+    content, next_questions = await client.generate_response(
+      query=message.content,
+      tools=tools,
+      session_id=cl.context.session.id,
+      user_id=user.identifier
+    )
+
+    guardrails.guard_model_response(
+      session_id=cl.context.session.id,
+      user_id=user.identifier,
+      content=content
+    )
     msg_actions = [
       cl.Action(
         name     = "next_question_click",
@@ -141,6 +166,14 @@ async def new_message(message: cl.Message):
     cl.user_session.set("memory", client.messages)
     # Send the response and next actions to user
     await cl.Message(content=content, actions=msg_actions).send()
+  except GuardrailViolation as violation:
+    logger.warning(
+      "Guardrail violation in session %s: %s",
+      cl.context.session.id,
+      violation,
+      exc_info=True
+    )
+    await cl.Message("Your request was blocked by safety policies. Please adjust and try again.").send()
   except Exception:
     logger.error(f"Error while processing: {traceback.print_exc()}")
     await cl.Message("An error occurred while processing! Please contact admin team!").send()

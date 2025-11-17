@@ -17,8 +17,9 @@ Response:
 """
 
 class AzureOpenAIClient:
-  def __init__(self) -> None:
+  def __init__(self, guardrails=None) -> None:
     self.deployment_name = os.environ["AZURE_OPENAI_MODEL"]
+    self.guardrails = guardrails
     self.client = AsyncAzureOpenAI(
       azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
       api_key=os.environ["AZURE_OPENAI_API_KEY"],
@@ -27,10 +28,17 @@ class AzureOpenAIClient:
     self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     self.title = None
 
-  async def generate_response(self, query, tools):
+  async def generate_response(self, query, tools, *, session_id="unknown", user_id="unknown"):
     try:
       logger.info(f"Sending query to Azure OpenAI for response: {query}")
       self.messages.append({"role": "user", "content": query})
+      if self.guardrails:
+        self.guardrails.audit_event(
+          "client_prompt_enqueued",
+          session_id=session_id,
+          user_id=user_id,
+          payload={"query": query[:200]}
+        )
 
       while True:
         resp = await self.client.chat.completions.create(
@@ -49,6 +57,14 @@ class AzureOpenAIClient:
           tool_call = msg.tool_calls[0]
           tool_name = tool_call.function.name
           tool_args = json.loads(tool_call.function.arguments)
+
+          if self.guardrails:
+            self.guardrails.guard_tool_call(
+              session_id=session_id,
+              user_id=user_id,
+              tool_name=tool_name,
+              arguments=tool_args
+            )
 
           self.messages.append({
             "role": "assistant",

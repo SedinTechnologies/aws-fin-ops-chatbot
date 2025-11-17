@@ -54,6 +54,33 @@ The bot strictly follows a system policy ensuring that all responses stay exclus
 
 ---
 
+## Guardrails
+
+The bot enforces configurable guardrails to keep every session within allowed AWS-finops scope. Key capabilities:
+
+- **Account/Service allowlists:** restrict requests to specific AWS accounts or services.
+- **Time-window limits:** block queries that exceed maximum lookback or forecast windows.
+- **Tool rate limiting:** per-tool call limits to prevent excessive downstream usage.
+- **Content scanning:** lightweight keyword detection on user input, tool output, and model responses.
+- **Auditing:** structured JSON lines written to the path in `GUARDRAIL_AUDIT_LOG`.
+
+### Guardrail Environment Variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GUARDRAILS_ENABLED` | `true` | Master switch |
+| `ALLOWED_AWS_ACCOUNTS` | empty | Comma-separated account IDs allowed |
+| `ALLOWED_AWS_SERVICES` | empty | Comma-separated AWS services allowed |
+| `MAX_LOOKBACK_DAYS` | `365` | Maximum historical window |
+| `MAX_FORECAST_DAYS` | `90` | Maximum forecast horizon |
+| `TOOL_RATE_LIMITS_JSON` | empty | JSON list of `{tool_name, max_calls, per_seconds}` |
+| `BUDGET_POLICY_JSON` | empty | JSON object, e.g. `{ "monthly_limit_usd": 50000 }` |
+| `GUARDRAIL_AUDIT_LOG` | empty | File path for JSON audit entries |
+
+Set these in `chainlit.env` (see the sample values already included) or your deployment secrets.
+
+---
+
 ## Setup Instructions
 
 ### 1. Clone the Repository

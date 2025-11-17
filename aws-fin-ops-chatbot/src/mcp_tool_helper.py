@@ -10,6 +10,17 @@ logger = logging.getLogger(__name__)
 
 @cl.step(type="tool")
 async def call_tool(tool_name, tool_args):
+  guardrails = cl.user_session.get("guardrails")
+  user = cl.user_session.get("user")
+  session_id = cl.context.session.id
+  user_id = getattr(user, "identifier", "unknown")
+  if guardrails:
+    guardrails.guard_tool_call(
+      session_id=session_id,
+      user_id=user_id,
+      tool_name=tool_name,
+      arguments=tool_args or {}
+    )
   try:
     logger.info(f"Session ID: {cl.context.session.id} Calling tool: {tool_name} with args: {tool_args}")
     resp_items = []
@@ -37,6 +48,14 @@ async def call_tool(tool_name, tool_args):
         })
       else:
         raise ValueError(f"Unsupported content type: {type(item)}")
+
+    if guardrails:
+      guardrails.guard_tool_response(
+        session_id=session_id,
+        user_id=user_id,
+        tool_name=tool_name,
+        response=resp_items
+      )
 
   except Exception as e:
     traceback.print_exc()
