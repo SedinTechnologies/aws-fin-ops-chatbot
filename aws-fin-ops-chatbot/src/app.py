@@ -164,8 +164,20 @@ async def new_message(message: cl.Message):
 
     # Store the messages back in session
     cl.user_session.set("memory", client.messages)
-    # Send the response and next actions to user
-    await cl.Message(content=content, actions=msg_actions).send()
+
+    # Primary assistant response with standard actions (copy/feedback)
+    response_message = cl.Message(content=content,
+    actions=msg_actions
+    )
+    await response_message.send()
+
+    # Attach buttons for follow-up suggestions
+    # if msg_actions:
+    #   await cl.Message(
+    #     content="\u200b",
+    #     actions=msg_actions,
+    #     author="system"
+    #   ).send()
   except GuardrailViolation as violation:
     logger.warning(
       "Guardrail violation in session %s: %s",
@@ -180,5 +192,7 @@ async def new_message(message: cl.Message):
 
 @cl.action_callback("next_question_click")
 async def next_question_click_action_callback(action: cl.Action):
-  # TODO handle this as regular user input and start processing
-  await cl.Message(action.payload["question"]).send()
+  question = action.payload["question"]
+  user_echo = cl.Message(author="user", content=question, type="user_message")
+  await user_echo.send()
+  await new_message(cl.Message(author="user", content=question))

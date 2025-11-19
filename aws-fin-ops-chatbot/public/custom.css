@@ -1,0 +1,45 @@
+/* Stack Chainlit message suggestion + feedback sections */
+.cl-message-actions {
+  position: relative;
+}
+
+/* Default selectors shipped in Chainlit 2.9 for thumb + CTA wrapper */
+.cl-message-actions .feedback-buttons,
+.cl-message-actions .action-buttons,
+.-ml-1\.5.flex.items-center.flex-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.5rem;
+  row-gap: 0.5rem;
+}
+
+/* Control row: copy + thumbs */
+.-ml-1\.5.flex.items-center.flex-wrap > button.inline-flex.items-center:is(.h-9.w-9),
+.-ml-1\.5.flex.items-center.flex-wrap > div:has(button.inline-flex.items-center.h-9.w-9) {
+  flex: 0 0 auto;
+  width: auto;
+  order: 0;
+}
+
+/* Stack follow-ups under the control row */
+.-ml-1\.5.flex.items-center.flex-wrap::before {
+  content: "";
+  flex-basis: 100%;
+  order: 0;
+}
+
+/* Keep primary controls together at the top */
+.-ml-1\.5.flex.items-center.flex-wrap > button.inline-flex.items-center:is(.h-9.w-9),
+.-ml-1\.5.flex.items-center.flex-wrap > div:has(button.inline-flex.items-center.h-9.w-9) {
+  flex: 0 0 auto;
+  width: auto;
+  order: 0;
+}
+
+.-ml-1\.5.flex.items-center.flex-wrap > button.inline-flex.items-center:not(.h-9.w-9) {
+  width: 100%;
+  justify-content: flex-start;
+  flex: 1 1 100%;
+  order: 1;
+}
