@@ -8,7 +8,6 @@ from mcp.types import TextContent, ImageContent
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-@cl.step(type="tool")
 async def call_tool(tool_name, tool_args):
   guardrails = cl.user_session.get("guardrails")
   user = cl.user_session.get("user")
@@ -82,7 +81,8 @@ async def fetch_registered_mcp_tools_for_user(user: cl.User):
         logger.info(f"Establishing MCP connection: {mcp_conn['name']} Session ID: {cl.context.session.id}")
         await create_new_mcp_connection(
           mcp_name=mcp_conn["name"],
-          command=mcp_conn["command"]
+          command=mcp_conn["command"],
+          transport=mcp_conn.get("transport")
         )
 
     registered_mcp_tools = [tool for mcp_tool in cl.user_session.get("mcp_tools").values() for tool in mcp_tool]
@@ -90,11 +90,19 @@ async def fetch_registered_mcp_tools_for_user(user: cl.User):
   except Exception:
     logger.error(f"Exception while fetching / registering mcp tools for session: {cl.context.session.id} Traceback: {traceback.print_exc()}")
 
-async def create_new_mcp_connection(mcp_name: str, command: str):
-  conn_request = cl_types.ConnectStdioMCPRequest(
-    sessionId=cl.context.session.id,
-    clientType="stdio",
-    name=mcp_name,
-    fullCommand=command
-  )
+async def create_new_mcp_connection(mcp_name: str, command: str, transport: dict | None = None):
+  if transport and transport.get("type") == "streamableHttp":
+    conn_request = cl_types.ConnectStreamableHttpMCPRequest(
+      sessionId=cl.context.session.id,
+      name=mcp_name,
+      url=transport["url"],
+      headers={"Authorization": transport.get("auth", "no-auth")}
+    )
+  else:
+    conn_request = cl_types.ConnectStdioMCPRequest(
+      sessionId=cl.context.session.id,
+      clientType="stdio",
+      name=mcp_name,
+      fullCommand=command
+    )
   await cl_server.connect_mcp(conn_request, cl.context.session.user)

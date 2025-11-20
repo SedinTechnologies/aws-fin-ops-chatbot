@@ -1,4 +1,4 @@
-import os, redis, logging, random, traceback
+import os, redis, logging, random, traceback, json
 
 import chainlit as cl
 from chainlit.types import ThreadDict
@@ -23,6 +23,33 @@ auth = AuthManager(store)
 
 CCAPI_MCP_SERVER_VERSION = os.getenv("CCAPI_MCP_SERVER_VERSION", "latest")
 AWS_COST_EXPLORER_MCP_SERVER_VERSION = os.getenv("AWS_COST_EXPLORER_MCP_SERVER_VERSION", "latest")
+
+
+def _build_mcp_config(prefix: str, *, default_host: str, default_port: str, default_auth: str = "no-auth"):
+  host = os.getenv(f"{prefix}_HOST", default_host)
+  port = os.getenv(f"{prefix}_PORT", default_port)
+  auth = os.getenv(f"{prefix}_AUTH", default_auth)
+  url = os.getenv(
+    f"{prefix}_URL",
+    f"http://{host}:{port}/mcp"
+  )
+  return {
+    "host": host,
+    "port": port,
+    "auth": auth,
+    "url": url
+  }
+
+cost_explorer_mcp = _build_mcp_config(
+  "AWS_COST_EXPLORER_MCP",
+  default_host="aws-cost-explorer-mcp",
+  default_port="8001"
+)
+ccapi_mcp = _build_mcp_config(
+  "AWS_CCAPI_MCP",
+  default_host="aws-ccapi-mcp",
+  default_port="8002"
+)
 
 seed_questions = [
   "Show my monthly AWS spend trend for the last 6 months",
@@ -54,11 +81,31 @@ async def auth_callback(username: str, password: str):
       "mcp_connections": [
         {
           "name": "aws-cost-explorer-mcp-server",
-          "command": f"/app/scripts/start-mcp-server.sh {user['aws_role_arn']} awslabs.cost-explorer-mcp-server@{AWS_COST_EXPLORER_MCP_SERVER_VERSION}"
+          "command": (
+            f"AWS_API_MCP_HOST={cost_explorer_mcp['host']} "
+            f"AWS_API_MCP_PORT={cost_explorer_mcp['port']} "
+            f"/app/scripts/start-mcp-server.sh {user['aws_role_arn']} "
+            f"awslabs.cost-explorer-mcp-server@{AWS_COST_EXPLORER_MCP_SERVER_VERSION}"
+          ),
+          "transport": {
+            "type": "streamable-http",
+            "url": cost_explorer_mcp["url"],
+            "auth": cost_explorer_mcp["auth"]
+          }
         },
         {
           "name": "aws-ccapi-mcp-server",
-          "command": f"/app/scripts/start-mcp-server.sh {user['aws_role_arn']} awslabs.ccapi-mcp-server@{CCAPI_MCP_SERVER_VERSION}"
+          "command": (
+            f"AWS_API_MCP_HOST={ccapi_mcp['host']} "
+            f"AWS_API_MCP_PORT={ccapi_mcp['port']} "
+            f"/app/scripts/start-mcp-server.sh {user['aws_role_arn']} "
+            f"awslabs.ccapi-mcp-server@{CCAPI_MCP_SERVER_VERSION}"
+          ),
+          "transport": {
+            "type": "streamable-http",
+            "url": ccapi_mcp["url"],
+            "auth": ccapi_mcp["auth"]
+          }
         }
       ]
     }
@@ -141,35 +188,54 @@ async def new_message(message: cl.Message):
 
     client.messages.extend(cl.user_session.get("memory", [])) # Add existing messages if any
 
-    content, next_questions = await client.generate_response(
+    response_message = cl.Message(content="")
+
+    next_questions = []
+    async for chunk in client.stream_response(
       query=message.content,
       tools=tools,
       session_id=cl.context.session.id,
       user_id=user.identifier
-    )
+    ):
+      try:
+        payload = json.loads(chunk)
+      except json.JSONDecodeError:
+        if not response_message.id:
+          await response_message.send()
+        await response_message.stream_token(chunk)
+        continue
 
-    guardrails.guard_model_response(
-      session_id=cl.context.session.id,
-      user_id=user.identifier,
-      content=content
-    )
-    msg_actions = [
-      cl.Action(
-        name     = "next_question_click",
-        icon     = nq["icon"],
-        label    = nq["question"],
-        payload  = { "question": nq["question"] }
-      ) for nq in next_questions
-    ]
+      if not isinstance(payload, dict):
+        if not response_message.id:
+          await response_message.send()
+        await response_message.stream_token(chunk)
+        continue
 
-    # Store the messages back in session
+      if payload.get("type") == "final":
+        next_questions = payload["next_questions"]
+        final_content = payload["content"]
+        guardrails.guard_model_response(
+          session_id=cl.context.session.id,
+          user_id=user.identifier,
+          content=final_content
+        )
+        if not response_message.id:
+          await response_message.send()
+        response_message.content = final_content
+        msg_actions = [
+          cl.Action(
+            name     = "next_question_click",
+            icon     = nq["icon"],
+            label    = nq["question"],
+            payload  = { "question": nq["question"] }
+          ) for nq in next_questions
+        ]
+        response_message.actions = msg_actions
+        await response_message.update()
+      else:
+        await response_message.stream_token(chunk)
+
     cl.user_session.set("memory", client.messages)
-
-    # Primary assistant response with standard actions (copy/feedback)
-    response_message = cl.Message(content=content,
-    actions=msg_actions
-    )
-    await response_message.send()
 
     # Attach buttons for follow-up suggestions
     # if msg_actions:
