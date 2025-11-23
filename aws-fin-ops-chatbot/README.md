@@ -6,7 +6,7 @@ AWS FinOps Bot is an AI-driven assistant built to analyze **AWS billing**, **AWS
 
 * **Azure OpenAI** as the LLM engine
 * **Chainlit** as the interactive web UI
-* **MCP servers** for AWS data retrieval:
+* **MCP servers** for AWS data retrieval (launched inside the Chainlit container via streamable HTTP; all endpoints stay on `127.0.0.1` unless you set `ENFORCE_LOCAL_MCP=false`):
 
   * `aws-cost-explorer-mcp-server`
   * `aws-ccapi-mcp-server`
@@ -171,7 +171,9 @@ docker compose ps
 ### MCP servers failing
 
 * Check your AWS credentials.
+* Ensure the MCP env vars still point to `127.0.0.1` (servers run inside the Chainlit container). If you override them, the hostname must exist on the Docker network or you must set `ENFORCE_LOCAL_MCP=false` and supply matching DNS.
 * For Localstack, confirm that endpoints are correctly configured.
+* If a streamable MCP takes a while to boot (e.g., first launch after pulling images), bump `STREAMABLE_HTTP_READY_TIMEOUT` (default `30s`) and optionally `STREAMABLE_HTTP_READY_INITIAL_DELAY` (default `1s`) so the readiness probe waits long enough before falling back to stdio.
 
 ### Azure OpenAI errors
 

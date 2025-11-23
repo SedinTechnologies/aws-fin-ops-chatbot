@@ -1,0 +1,7 @@
+# Exclude local dev artifacts so the container builds a fresh virtualenv
+.venv
+.pytest_cache
+__pycache__/
+*.pyc
+.git
+docs/_build

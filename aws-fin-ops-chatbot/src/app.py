@@ -1,17 +1,40 @@
-import os, redis, logging, random, traceback, json
+import os, redis, logging, random, traceback, json, shlex
+from typing import List, Dict, Any
 
 import chainlit as cl
 from chainlit.types import ThreadDict
 from mcp import ClientSession
+from chainlit.data import chainlit_data_layer
+from datetime import datetime as _datetime
 
 from mcp_tool_helper import (
   fetch_registered_mcp_tools_for_user,
   deregister_mcp_tools_for_user
 )
 from azure_openai_client import AzureOpenAIClient
+from langgraph_app import LangGraphClient, GraphNotAvailableError
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
 from guardrails import GuardrailEngine, GuardrailViolation
+
+# Chainlit stores timestamps with a trailing 'Z'; keep the default parser so history persists.
+chainlit_data_layer.ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+
+class _LenientDatetime(_datetime):
+  @classmethod
+  def strptime(cls, date_string, fmt):
+    try:
+      return _datetime.strptime(date_string, fmt)
+    except ValueError as exc:
+      if fmt.endswith("Z") and not date_string.endswith("Z"):
+        return _datetime.strptime(f"{date_string}Z", fmt)
+      if not fmt.endswith("Z") and date_string.endswith("Z"):
+        return _datetime.strptime(date_string[:-1], fmt)
+      raise exc
+
+
+chainlit_data_layer.datetime = _LenientDatetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,33 +46,131 @@ auth = AuthManager(store)
 
 CCAPI_MCP_SERVER_VERSION = os.getenv("CCAPI_MCP_SERVER_VERSION", "latest")
 AWS_COST_EXPLORER_MCP_SERVER_VERSION = os.getenv("AWS_COST_EXPLORER_MCP_SERVER_VERSION", "latest")
+ENABLE_LANGGRAPH = os.getenv("ENABLE_LANGGRAPH", "false").lower() == "true"
+ENFORCE_LOCAL_MCP = os.getenv("ENFORCE_LOCAL_MCP", "true").lower() == "true"
 
 
-def _build_mcp_config(prefix: str, *, default_host: str, default_port: str, default_auth: str = "no-auth"):
-  host = os.getenv(f"{prefix}_HOST", default_host)
+def _build_mcp_config(
+  prefix: str,
+  *,
+  default_host: str,
+  default_port: str,
+  default_auth: str = "no-auth",
+  default_transport: str = "stdio",
+  default_client_host: str | None = None
+):
+  host_env = os.getenv(f"{prefix}_HOST")
+  if ENFORCE_LOCAL_MCP:
+    host_env = "127.0.0.1"
+  bind_host = os.getenv(f"{prefix}_BIND_HOST") or host_env or default_host
+  client_host = os.getenv(f"{prefix}_CLIENT_HOST")
+  if client_host is None:
+    if default_client_host is not None:
+      client_host = default_client_host
+    else:
+      client_host = host_env or bind_host
+  if ENFORCE_LOCAL_MCP:
+    bind_host = "127.0.0.1"
+    client_host = "127.0.0.1"
   port = os.getenv(f"{prefix}_PORT", default_port)
   auth = os.getenv(f"{prefix}_AUTH", default_auth)
+  transport = os.getenv(f"{prefix}_TRANSPORT", default_transport)
+  allowed_hosts = os.getenv(f"{prefix}_ALLOWED_HOSTS")
+  allowed_origins = os.getenv(f"{prefix}_ALLOWED_ORIGINS")
+  if transport.replace("-", "").replace("_", "").lower() == "streamablehttp":
+    if not ENFORCE_LOCAL_MCP and host_env is None and os.getenv(f"{prefix}_BIND_HOST") is None:
+      bind_host = "0.0.0.0"
+    if not ENFORCE_LOCAL_MCP and os.getenv(f"{prefix}_CLIENT_HOST") is None and host_env is None and default_client_host is None:
+      client_host = "127.0.0.1"
   url = os.getenv(
     f"{prefix}_URL",
-    f"http://{host}:{port}/mcp"
+    f"http://{client_host}:{port}/mcp"
   )
+  if allowed_hosts is None:
+    allowed_hosts = client_host
+  if allowed_origins is None:
+    allowed_origins = url
+  if ENFORCE_LOCAL_MCP:
+    url = f"http://127.0.0.1:{port}/mcp"
+    allowed_hosts = "127.0.0.1"
+    allowed_origins = url
   return {
-    "host": host,
+    "host": "127.0.0.1" if ENFORCE_LOCAL_MCP else bind_host,
+    "bind_host": "127.0.0.1" if ENFORCE_LOCAL_MCP else bind_host,
+    "client_host": client_host,
     "port": port,
     "auth": auth,
-    "url": url
+    "url": url,
+    "transport": transport,
+    "allowed_hosts": allowed_hosts,
+    "allowed_origins": allowed_origins
   }
+
+
+def _build_mcp_command(
+  *,
+  config: Dict[str, str],
+  role_arn: str,
+  server_version: str,
+  package_name: str,
+  transport_override: str | None = None
+):
+  transport = transport_override or config["transport"]
+  normalized_transport = (transport or "").replace("-", "").replace("_", "").lower()
+  package_spec = package_name
+  if normalized_transport == "streamablehttp":
+    package_spec = f"{package_name}[streamable-http]"
+  package_arg = shlex.quote(f"{package_spec}@{server_version}")
+  quoted_role_arn = shlex.quote(role_arn)
+  enforce_local = "true" if ENFORCE_LOCAL_MCP else "false"
+  parts = [
+    f"AWS_API_MCP_TRANSPORT={transport}",
+    f"AWS_API_MCP_HOST={config['host']}",
+    f"AWS_API_MCP_PORT={config['port']}",
+    f"ENFORCE_LOCAL_MCP={enforce_local}"
+  ]
+  bind_host = config.get("bind_host")
+  if bind_host:
+    parts.append(f"AWS_API_MCP_BIND_HOST={bind_host}")
+  client_host = config.get("client_host")
+  if client_host:
+    parts.append(f"AWS_API_MCP_CLIENT_HOST={client_host}")
+  if config.get("url"):
+    parts.append(f"AWS_API_MCP_URL={config['url']}")
+  if config.get("allowed_hosts"):
+    parts.append(f"AWS_API_MCP_ALLOWED_HOSTS={config['allowed_hosts']}")
+  if config.get("allowed_origins"):
+    parts.append(f"AWS_API_MCP_ALLOWED_ORIGINS={config['allowed_origins']}")
+  parts.append(
+    f"/app/scripts/start-mcp-server.sh {quoted_role_arn} {package_arg}"
+  )
+  return " ".join(parts)
 
 cost_explorer_mcp = _build_mcp_config(
   "AWS_COST_EXPLORER_MCP",
-  default_host="aws-cost-explorer-mcp",
-  default_port="8001"
+  default_host="0.0.0.0",
+  default_port="8001",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
 )
 ccapi_mcp = _build_mcp_config(
   "AWS_CCAPI_MCP",
-  default_host="aws-ccapi-mcp",
-  default_port="8002"
+  default_host="0.0.0.0",
+  default_port="8002",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
 )
+
+
+def _streamable_transport_metadata(config: Dict[str, str]):
+  transport = (config.get("transport") or "").replace("-", "").replace("_", "").lower()
+  if transport != "streamablehttp":
+    return None
+  return {
+    "type": "streamable-http",
+    "url": config["url"],
+    "auth": config["auth"]
+  }
 
 seed_questions = [
   "Show my monthly AWS spend trend for the last 6 months",
@@ -74,6 +195,34 @@ async def auth_callback(username: str, password: str):
   user = auth.authenticate(username, password)
   if not user:
     return None
+  cost_explorer_transport = _streamable_transport_metadata(cost_explorer_mcp)
+  ccapi_transport = _streamable_transport_metadata(ccapi_mcp)
+  cost_explorer_command = _build_mcp_command(
+    config=cost_explorer_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_COST_EXPLORER_MCP_SERVER_VERSION,
+    package_name="awslabs.cost-explorer-mcp-server"
+  )
+  ccapi_command = _build_mcp_command(
+    config=ccapi_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=CCAPI_MCP_SERVER_VERSION,
+    package_name="awslabs.ccapi-mcp-server"
+  )
+  cost_explorer_stdio_command = _build_mcp_command(
+    config=cost_explorer_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_COST_EXPLORER_MCP_SERVER_VERSION,
+    package_name="awslabs.cost-explorer-mcp-server",
+    transport_override="stdio"
+  )
+  ccapi_stdio_command = _build_mcp_command(
+    config=ccapi_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=CCAPI_MCP_SERVER_VERSION,
+    package_name="awslabs.ccapi-mcp-server",
+    transport_override="stdio"
+  )
   return cl.User(
     identifier=user["identifier"],
     display_name=user["name"],
@@ -81,31 +230,15 @@ async def auth_callback(username: str, password: str):
       "mcp_connections": [
         {
           "name": "aws-cost-explorer-mcp-server",
-          "command": (
-            f"AWS_API_MCP_HOST={cost_explorer_mcp['host']} "
-            f"AWS_API_MCP_PORT={cost_explorer_mcp['port']} "
-            f"/app/scripts/start-mcp-server.sh {user['aws_role_arn']} "
-            f"awslabs.cost-explorer-mcp-server@{AWS_COST_EXPLORER_MCP_SERVER_VERSION}"
-          ),
-          "transport": {
-            "type": "streamable-http",
-            "url": cost_explorer_mcp["url"],
-            "auth": cost_explorer_mcp["auth"]
-          }
+          "command": cost_explorer_command,
+          "stdio_command": cost_explorer_stdio_command,
+          **({"transport": cost_explorer_transport} if cost_explorer_transport else {})
         },
         {
           "name": "aws-ccapi-mcp-server",
-          "command": (
-            f"AWS_API_MCP_HOST={ccapi_mcp['host']} "
-            f"AWS_API_MCP_PORT={ccapi_mcp['port']} "
-            f"/app/scripts/start-mcp-server.sh {user['aws_role_arn']} "
-            f"awslabs.ccapi-mcp-server@{CCAPI_MCP_SERVER_VERSION}"
-          ),
-          "transport": {
-            "type": "streamable-http",
-            "url": ccapi_mcp["url"],
-            "auth": ccapi_mcp["auth"]
-          }
+          "command": ccapi_command,
+          "stdio_command": ccapi_stdio_command,
+          **({"transport": ccapi_transport} if ccapi_transport else {})
         }
       ]
     }
@@ -120,9 +253,20 @@ async def on_chat_start():
     return
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
-  client = AzureOpenAIClient(guardrails=guardrails)
+  use_langgraph = ENABLE_LANGGRAPH
+  client = None
+  if use_langgraph:
+    try:
+      client = LangGraphClient(guardrails=guardrails)
+    except GraphNotAvailableError:
+      logger.warning("LangGraph dependencies missing; falling back to AzureOpenAIClient")
+      use_langgraph = False
+  if not use_langgraph:
+    client = AzureOpenAIClient(guardrails=guardrails)
+  cl.user_session.set("langgraph_enabled", use_langgraph)
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
+  cl.user_session.set("memory", [])
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
 @cl.on_chat_resume
@@ -138,8 +282,21 @@ async def on_chat_resume(thread: ThreadDict):
   # Updating client with the old messages
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
-  client = AzureOpenAIClient(guardrails=guardrails)
-  client.messages.extend(memory)
+  use_langgraph = ENABLE_LANGGRAPH
+  client = None
+  if use_langgraph:
+    try:
+      client = LangGraphClient(guardrails=guardrails)
+    except GraphNotAvailableError:
+      logger.warning("LangGraph dependencies missing; falling back to AzureOpenAIClient")
+      use_langgraph = False
+  if not use_langgraph:
+    client = AzureOpenAIClient(guardrails=guardrails)
+    client.messages.extend(memory)
+  else:
+    base_history = client.history[:1]
+    client.history = base_history + memory
+  cl.user_session.set("langgraph_enabled", use_langgraph)
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
 
@@ -177,21 +334,82 @@ async def new_message(message: cl.Message):
       return
 
     tools = await fetch_registered_mcp_tools_for_user(user)
-    client: AzureOpenAIClient = cl.user_session.get("client")
+
+    use_langgraph = bool(cl.user_session.get("langgraph_enabled", False))
+    client = cl.user_session.get("client")
+    if client is None:
+      await cl.Message(content="Session not initialized. Please refresh and try again.").send()
+      return
     guardrails: GuardrailEngine = cl.user_session.get("guardrails")
 
-    guardrails.guard_input(
-      session_id=cl.context.session.id,
-      user_id=user.identifier,
-      text=message.content
-    )
+    if not use_langgraph:
+      guardrails.guard_input(
+        session_id=cl.context.session.id,
+        user_id=user.identifier,
+        text=message.content
+      )
 
-    client.messages.extend(cl.user_session.get("memory", [])) # Add existing messages if any
+    if use_langgraph:
+      lg_client: LangGraphClient = client
+      response_message = cl.Message(content="")
+      buffered_chunks: List[str] = []
+      next_questions: List[Dict[str, Any]] = []
+
+      async for chunk in lg_client.stream_response(
+        message.content,
+        session_id=cl.context.session.id,
+        user_id=user.identifier,
+        tools=tools
+      ):
+        try:
+          payload = json.loads(chunk)
+        except json.JSONDecodeError:
+          buffered_chunks.append(chunk)
+          if not response_message.id:
+            await response_message.send()
+          await response_message.stream_token(chunk)
+          continue
+
+        if payload.get("type") == "final":
+          next_questions = payload.get("next_questions", [])
+          final_content = payload.get("content", "")
+
+          guardrails.guard_model_response(
+            session_id=cl.context.session.id,
+            user_id=user.identifier,
+            content=final_content
+          )
+
+          if not response_message.id:
+            await response_message.send()
+
+          response_message.content = final_content or "".join(buffered_chunks)
+          msg_actions = [
+            cl.Action(
+              name="next_question_click",
+              icon=nq["icon"],
+              label=nq["question"],
+              payload={"question": nq["question"]}
+            ) for nq in next_questions
+          ] if next_questions else []
+          response_message.actions = msg_actions
+          await response_message.update()
+        else:
+          if not response_message.id:
+            await response_message.send()
+          await response_message.stream_token(chunk if isinstance(chunk, str) else str(chunk))
+
+      cl.user_session.set("memory", lg_client.history)
+      return
+
+    az_client: AzureOpenAIClient = client
+
+    az_client.messages.extend(cl.user_session.get("memory", [])) # Add existing messages if any
 
     response_message = cl.Message(content="")
 
     next_questions = []
-    async for chunk in client.stream_response(
+    async for chunk in az_client.stream_response(
       query=message.content,
       tools=tools,
       session_id=cl.context.session.id,
@@ -235,7 +453,7 @@ async def new_message(message: cl.Message):
       else:
         await response_message.stream_token(chunk)
 
-    cl.user_session.set("memory", client.messages)
+    cl.user_session.set("memory", az_client.messages)
 
     # Attach buttons for follow-up suggestions
     # if msg_actions:
