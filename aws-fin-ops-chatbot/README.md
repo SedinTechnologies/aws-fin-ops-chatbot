@@ -66,21 +66,57 @@ The bot enforces configurable guardrails to keep every session within allowed AW
 
 Set `TOOL_RATE_LIMIT_MODE` to control enforcement: `enforce` (block requests), `warn` (log but continue), or `off` (disable rate limiting). The sample `chainlit.env` defaults to `warn` so development sessions are not interrupted even when a tool is called repeatedly.
 
-### Guardrail Environment Variables
+## Environment Variables
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `GUARDRAILS_ENABLED` | `true` | Master switch |
-| `ALLOWED_AWS_ACCOUNTS` | empty | Comma-separated account IDs allowed |
-| `ALLOWED_AWS_SERVICES` | empty | Comma-separated AWS services allowed |
-| `MAX_LOOKBACK_DAYS` | `365` | Maximum historical window |
-| `MAX_FORECAST_DAYS` | `90` | Maximum forecast horizon |
-| `TOOL_RATE_LIMITS_JSON` | empty | JSON list of `{tool_name, max_calls, per_seconds}` |
-| `TOOL_RATE_LIMIT_MODE` | `warn` | How to react when a tool exceeds its limit: `enforce`, `warn`, or `off` |
-| `BUDGET_POLICY_JSON` | empty | JSON object, e.g. `{ "monthly_limit_usd": 50000 }` |
-| `GUARDRAIL_AUDIT_LOG` | empty | File path for JSON audit entries |
+The application uses several environment variables for configuration. These are split across multiple `.env` files in the `docker-compose.yml` setup. Please update as necessary in the respective `.env` files.
 
-Set these in `chainlit.env` (see the sample values already included) or your deployment secrets.
+| Variable | File | Default | Description |
+| :--- | :--- | :--- | :--- |
+| **Azure OpenAI** | | | |
+| `OPENAI_API_VERSION` | `azure-openai.env` | `2025-01-01-preview` | API version for Azure OpenAI |
+| `AZURE_OPENAI_MODEL` | `azure-openai.env` | `gpt-5` | Model deployment name |
+| `AZURE_OPENAI_ENDPOINT` | `azure-openai.env` | `https://opendevopsai.openai.azure.com` | Endpoint URL |
+| `AZURE_OPENAI_API_KEY` | `azure-openai.env` | - | **Secret**: API Key for Azure OpenAI |
+| `AZURE_OPENAI_API_KEY2` | `azure-openai.env` | - | **Secret**: Secondary API Key |
+| **AWS Credentials** | | | |
+| `AWS_ACCESS_KEY_ID` | `aws-rf-billingpoc-user.env` | - | **Secret**: AWS Access Key ID |
+| `AWS_SECRET_ACCESS_KEY` | `aws-rf-billingpoc-user.env` | - | **Secret**: AWS Secret Access Key |
+| `AWS_DEFAULT_REGION` | `aws-rf-billingpoc-user.env` | `us-east-1` | Default AWS Region |
+| **Chainlit Config** | | | |
+| `CHAINLIT_HOST` | `chainlit.env` | `0.0.0.0` | Host for Chainlit server |
+| `CHAINLIT_PORT` | `chainlit.env` | `8000` | Port for Chainlit server |
+| `CHAINLIT_LANGUAGE` | `chainlit.env` | `en-US` | UI Language |
+| `CHAINLIT_REQUIRE_LOGIN` | `chainlit.env` | `true` | Enforce login |
+| `CHAINLIT_AUTH_SECRET` | `chainlit.env` | - | **Secret**: Secret for session signing |
+| **Database & Cache** | | | |
+| `REDIS_HOST` | `chainlit.env` | `redis` | Redis hostname |
+| `REDIS_PORT` | `chainlit.env` | `6379` | Redis port |
+| `DATABASE_URL` | `chainlit.env` | - | **Secret**: PostgreSQL connection string |
+| **App Specific AWS** | | | |
+| `BUCKET_NAME` | `chainlit.env` | `aws-fin-ops-bot-data` | S3 Bucket name |
+| `APP_AWS_ACCESS_KEY` | `chainlit.env` | `dummy-key` | AWS Access Key for App (Localstack) |
+| `APP_AWS_SECRET_KEY` | `chainlit.env` | `dummy-key` | AWS Secret Key for App (Localstack) |
+| `APP_AWS_REGION` | `chainlit.env` | `us-east-1` | AWS Region for App |
+| `DEV_AWS_ENDPOINT` | `chainlit.env` | `http://localstack:4566` | Localstack endpoint |
+| **Guardrails** | | | |
+| `GUARDRAILS_ENABLED` | `guardrails.env` | `true` | Master switch for guardrails |
+| `GUARDRAIL_AUDIT_LOG` | `guardrails.env` | `/tmp/guardrail_audit.log` | Path to audit log |
+| `ALLOWED_AWS_ACCOUNTS` | `guardrails.env` | - | Comma-separated allowed account IDs |
+| `ALLOWED_AWS_SERVICES` | `guardrails.env` | `CostExplorer,EC2,S3` | Comma-separated allowed services |
+| `MAX_LOOKBACK_DAYS` | `guardrails.env` | `365` | Max historical days for queries |
+| `MAX_FORECAST_DAYS` | `guardrails.env` | `90` | Max forecast days |
+| `TOOL_RATE_LIMIT_MODE` | `guardrails.env` | `warn` | Rate limit mode: `enforce`, `warn`, `off` |
+| `TOOL_RATE_LIMITS_JSON` | `guardrails.env` | `[]` | JSON for per-tool limits |
+| `BUDGET_POLICY_JSON` | `guardrails.env` | `{}` | JSON for budget policy |
+| **MCP Servers** | | | |
+| `AWS_COST_EXPLORER_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Cost Explorer MCP |
+| `AWS_COST_EXPLORER_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Cost Explorer MCP |
+| `AWS_COST_EXPLORER_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Cost Explorer MCP |
+| `AWS_COST_EXPLORER_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8001/mcp` | URL for Cost Explorer MCP |
+| `AWS_CCAPI_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CCAPI MCP |
+| `AWS_CCAPI_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CCAPI MCP |
+| `AWS_CCAPI_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CCAPI MCP |
+| `AWS_CCAPI_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8002/mcp` | URL for CCAPI MCP |
 
 ---
 
@@ -102,18 +138,18 @@ Update the local migrations if necessary.
 
 ### 3. Run Migrations
 
-1. Uncomment `data-migration` in `docker-compose.yml`.
+1. Uncomment `data-migration` service code in `docker-compose.yml`.
 2. Run:
 
 ```bash
 docker compose up postgres data-migration --build
 ```
 
-3. Wait for the migration to complete.
-4. Stop the containers.
-5. Re‑comment the `data-migration` section.
+3. Wait for the migrations to complete.
+4. Stop the docker compose command.
+5. Re‑comment the `data-migration` service code in `docker-compose.yml`.
 
-### 4. Start the App
+### 4. Start the Actual Application & it's dependencies
 
 ```bash
 docker compose up --build
