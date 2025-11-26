@@ -267,13 +267,6 @@ async def on_chat_start():
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
   cl.user_session.set("memory", [])
-  try:
-    await fetch_registered_mcp_tools_for_user(user)
-  except Exception:  # noqa: BLE001
-    logger.exception(
-      "Failed to pre-register MCP tools for session %s",
-      cl.context.session.id
-    )
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
 @cl.on_chat_resume
@@ -313,14 +306,6 @@ async def on_chat_resume(thread: ThreadDict):
 
   # Save the restored memory/context back into the user session
   cl.user_session.set("memory", memory)
-  if user:
-    try:
-      await fetch_registered_mcp_tools_for_user(user)
-    except Exception:  # noqa: BLE001
-      logger.exception(
-        "Failed to re-register MCP tools for resumed session %s",
-        cl.context.session.id
-      )
 
 @cl.on_chat_end
 async def on_chat_end():
