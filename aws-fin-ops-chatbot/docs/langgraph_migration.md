@@ -7,7 +7,7 @@ This document captures the assessment from Step 1 of the LangGraph migration eff
 1. **Chainlit session lifecycle** (`src/app.py`)
    - Handles auth, MCP connection bootstrap, memory restoration, and message streaming via `AzureOpenAIClient`.
 2. **AzureOpenAIClient** (`src/azure_openai_client.py`)
-   - Maintains message history, streams responses, parses tool deltas, caches MCP outputs, and injects guardrail audits.
+   - Maintains message history, streams responses, parses tool deltas, and injects guardrail audits.
 3. **Tool execution** (`src/mcp_tool_helper.py`)
    - Looks up the right MCP session, calls the tool, marshals text/image payloads, and re-applies guardrails.
 4. **Guardrails** (`src/guardrails.py`)
@@ -20,7 +20,7 @@ This document captures the assessment from Step 1 of the LangGraph migration eff
 | User input guard + memory trim | `InputGuardNode` → enforces GuardrailEngine before graph run |
 | Prompt + system rules assembly | `ComposePromptNode` → merges system prompt, trimmed history, and latest user turn |
 | LLM generation (with tool-use decision) | `LLMNode` using Azure OpenAI endpoint registered as LangGraph LLM |
-| Tool-call delta handling + caching | `ToolRouterNode` → inspects LLM tool calls, checks cache, decides whether to invoke MCP |
+| Tool-call delta handling | `ToolRouterNode` → inspects LLM tool calls and decides whether to invoke MCP |
 | MCP invocation | `MCPCallNode` → wraps existing `call_tool` helper or new LangGraph Tool definition |
 | Guard tool response + fan-in | `ToolGuardNode` followed by `ResponseAggregatorNode` |
 | Final formatting (title/next questions) | `FormatterNode` that enforces `<title>::<md>::<json>` schema |
@@ -38,4 +38,3 @@ This document captures the assessment from Step 1 of the LangGraph migration eff
 1. Prototype a minimal LangGraph workflow (user → guard → LLM → formatter) inside a new module (`src/langgraph_app.py`) while keeping the existing client in place.
 2. Once basic messaging works, extend the graph with tool-call nodes and replace the direct `AzureOpenAIClient` usage in `on_message`.
 3. Gradually retire the old client after parity tests (happy-path RDS/S3 cost queries + guardrail violations).
-

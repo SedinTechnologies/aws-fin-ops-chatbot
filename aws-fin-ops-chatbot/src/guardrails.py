@@ -71,6 +71,7 @@ class GuardrailConfig:
     window_policy: WindowPolicy = field(default_factory=WindowPolicy)
     budget_policy: BudgetPolicy = field(default_factory=BudgetPolicy)
     tool_rate_limits: Dict[str, ToolRateLimit] = field(default_factory=dict)
+    tool_rate_limit_mode: str = "warn"
     audit_log_path: Optional[Path] = None
     enabled: bool = True
 
@@ -142,6 +143,13 @@ class GuardrailEngine:
         )
 
         tool_limits = _parse_tool_limits(os.getenv("TOOL_RATE_LIMITS_JSON"))
+        raw_limit_mode = (os.getenv("TOOL_RATE_LIMIT_MODE") or "warn").strip().lower()
+        allowed_limit_modes = {"enforce", "warn", "off", "disabled", "disable"}
+        if raw_limit_mode not in allowed_limit_modes:
+            logger.warning("Invalid TOOL_RATE_LIMIT_MODE=%s; defaulting to 'enforce'", raw_limit_mode)
+            raw_limit_mode = "enforce"
+        if raw_limit_mode in {"disabled", "disable"}:
+            raw_limit_mode = "off"
 
         audit_path = os.getenv("GUARDRAIL_AUDIT_LOG")
         audit_path_obj = Path(audit_path) if audit_path else None
@@ -155,6 +163,7 @@ class GuardrailEngine:
             ),
             budget_policy=budget_policy,
             tool_rate_limits=tool_limits,
+            tool_rate_limit_mode=raw_limit_mode,
             audit_log_path=audit_path_obj,
             enabled=enabled,
         )
@@ -211,7 +220,11 @@ class GuardrailEngine:
     ) -> None:
         if not self.config.enabled:
             return
-        self._enforce_tool_rate_limit(tool_name)
+        self._enforce_tool_rate_limit(
+            tool_name,
+            session_id=session_id,
+            user_id=user_id
+        )
         account = arguments.get("account_id")
         service = arguments.get("service")
         if not self.config.account_policy.is_allowed(account):
@@ -306,9 +319,16 @@ class GuardrailEngine:
         ]
         return any(term in lowered for term in sensitive_terms)
 
-    def _enforce_tool_rate_limit(self, tool_name: str) -> None:
+    def _enforce_tool_rate_limit(
+        self,
+        tool_name: str,
+        *,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> None:
         rate_limit = self.config.tool_rate_limits.get(tool_name)
-        if not rate_limit:
+        mode = (self.config.tool_rate_limit_mode or "enforce").lower()
+        if not rate_limit or mode == "off":
             return
         now = time.monotonic()
         with self._counters_lock:
@@ -318,10 +338,31 @@ class GuardrailEngine:
             self._tool_counters[tool_name] = [ts for ts in timestamps if ts >= window_start]
             timestamps = self._tool_counters[tool_name]
             if len(timestamps) >= rate_limit.max_calls:
-                raise ToolRateLimitViolation(
-                    f"Tool '{tool_name}' exceeded rate limit",
-                    {"tool": tool_name, "max_calls": rate_limit.max_calls, "per_seconds": rate_limit.per_seconds},
-                )
+                details = {
+                    "tool": tool_name,
+                    "max_calls": rate_limit.max_calls,
+                    "per_seconds": rate_limit.per_seconds,
+                    "mode": mode
+                }
+                if mode == "warn":
+                    logger.warning(
+                        "Tool '%s' hit rate limit (%s calls / %ss); continuing in warn mode",
+                        tool_name,
+                        rate_limit.max_calls,
+                        rate_limit.per_seconds
+                    )
+                    if session_id and user_id:
+                        self.audit_event(
+                            "tool_rate_limit_warning",
+                            session_id,
+                            user_id,
+                            details
+                        )
+                else:
+                    raise ToolRateLimitViolation(
+                        f"Tool '{tool_name}' exceeded rate limit",
+                        details,
+                    )
             timestamps.append(now)
 
 

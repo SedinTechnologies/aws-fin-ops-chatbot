@@ -1,5 +1,4 @@
-import os, json, logging, time
-from copy import deepcopy
+import os, json, logging
 from typing import AsyncGenerator, List, Tuple
 from mcp_tool_helper import call_tool
 from openai import AsyncAzureOpenAI
@@ -46,9 +45,16 @@ class AzureOpenAIClient:
         # pending tool calls per stream
         self._pending_tool_calls = {}
         self._tool_call_in_progress = False
-        self._tool_response_cache: dict[str, dict[str, object]] = {}
-        self.tool_cache_ttl = int(os.getenv("MCP_TOOL_CACHE_TTL", "900"))
-        self.tool_cache_max_entries = int(os.getenv("MCP_TOOL_CACHE_MAX_ENTRIES", "64"))
+        self._ephemeral_messages: list[dict] = []
+
+    def _purge_ephemeral_messages(self) -> None:
+        if not self._ephemeral_messages:
+            return
+        self.messages = [
+            msg for msg in self.messages
+            if msg not in self._ephemeral_messages
+        ]
+        self._ephemeral_messages.clear()
 
     # ----------------------------------------
     # TOOL CALL ASSEMBLY (STREAMING)
@@ -198,62 +204,16 @@ class AzureOpenAIClient:
             ]
         })
 
-        # Execute MCP tool (with cache) ----------------------------------------
-        self._prune_tool_cache()
-        signature = json.dumps({"tool": tool_name, "args": tool_args}, sort_keys=True)
-        cache_entry = self._tool_response_cache.get(signature)
+        # Execute MCP tool (without cache) -------------------------------------
+        tool_resp = await call_tool(tool_name, tool_args)
 
-        if cache_entry:
-            cache_entry["count"] = int(cache_entry.get("count", 1)) + 1
-            tool_resp = deepcopy(cache_entry["response"])
-            logger.info(
-                "Reusing cached tool response for %s (hit %s)",
-                tool_name,
-                cache_entry["count"]
-            )
-        else:
-            tool_resp = await call_tool(tool_name, tool_args)
-            self._tool_response_cache[signature] = {
-                "response": deepcopy(tool_resp),
-                "count": 1,
-                "timestamp": time.time()
-            }
-            logger.debug("Caching tool response for %s signature=%s", tool_name, signature)
-
+        serialized = _serialize_tool_content(tool_resp)
         self.messages.append({
             "role": "tool",
             "name": tool_name,
             "tool_call_id": tool_id,
-            "content": _serialize_tool_content(tool_resp)
+            "content": serialized
         })
-
-    def _prune_tool_cache(self) -> None:
-        if not self._tool_response_cache:
-            return
-
-        now = time.time()
-        ttl = max(1, self.tool_cache_ttl)
-        evicted = 0
-
-        for signature in list(self._tool_response_cache.keys()):
-            entry = self._tool_response_cache.get(signature) or {}
-            ts = float(entry.get("timestamp", now))
-            if now - ts > ttl:
-                self._tool_response_cache.pop(signature, None)
-                evicted += 1
-
-        if len(self._tool_response_cache) > self.tool_cache_max_entries:
-            sorted_items = sorted(
-                self._tool_response_cache.items(),
-                key=lambda item: item[1].get("timestamp", now)
-            )
-            overflow = len(self._tool_response_cache) - self.tool_cache_max_entries
-            for signature, _ in sorted_items[:overflow]:
-                self._tool_response_cache.pop(signature, None)
-                evicted += 1
-
-        if evicted:
-            logger.debug("Pruned %s tool cache entries (remaining=%s)", evicted, len(self._tool_response_cache))
 
     # ----------------------------------------
     # FINAL OUTPUT PARSING (<title>::<md>::<json>)
@@ -281,6 +241,8 @@ class AzureOpenAIClient:
     ) -> AsyncGenerator[str, None]:
 
         logger.info(f"Streaming query to Azure OpenAI: {query}")
+
+        self._purge_ephemeral_messages()
 
         self.messages.append({"role": "user", "content": query})
 
@@ -357,6 +319,7 @@ class AzureOpenAIClient:
                         m for m in self.messages
                         if not (m.get("tool_calls") or m["role"] == "tool")
                     ]
+                    self._purge_ephemeral_messages()
 
                     self.messages.append({"role": "assistant", "content": markdown})
 
@@ -396,6 +359,7 @@ class AzureOpenAIClient:
                         m for m in self.messages
                         if not (m.get("tool_calls") or m["role"] == "tool")
                     ]
+                    self._purge_ephemeral_messages()
 
                     self.messages.append({"role": "assistant", "content": final_json["content"]})
 

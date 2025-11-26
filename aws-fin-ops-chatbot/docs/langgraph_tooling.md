@@ -6,7 +6,6 @@ This note captures the design for extending the LangGraph prototype to support M
 
 1. **ToolDecisionNode**
    - Examines the LLM output to determine whether tool calls were requested.
-   - Handles caching by checking `(tool_name, args)` signature before reissuing MCP calls.
 
 2. **MCPInvokeNode**
    - Reuses `call_tool` from `mcp_tool_helper.py` to keep existing guardrail logic.
@@ -29,8 +28,7 @@ START → GuardInput → LLM → ToolDecision →
 
 ## Implementation Tasks
 
-1. Expand `ChatState` to track pending tool calls, cache map, and repeat counts.
+1. Expand `ChatState` to track pending tool calls and repeat counts.
 2. Create serialization helpers (reuse `_serialize_tool_content`) for tool responses reinserted into history.
 3. Bridge LangGraph streaming to Chainlit: either accumulate final text or emit intermediate tokens.
 4. Update `docs/langgraph_migration.md` to reflect the new node structure once implemented.
-

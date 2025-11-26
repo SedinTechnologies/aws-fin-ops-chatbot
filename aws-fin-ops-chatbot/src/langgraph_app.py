@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
-from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, TypedDict, AsyncGenerator
 
@@ -26,14 +24,31 @@ try:  # Optional dependency guard
   from langgraph.graph.graph import CompiledGraph
   from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
   from langchain_openai import AzureChatOpenAI
+  from langgraph.errors import GraphRecursionError
 except ImportError:  # pragma: no cover - handled at runtime
   START = END = StateGraph = None  # type: ignore[assignment]
   CompiledGraph = None  # type: ignore[assignment]
   AzureChatOpenAI = None  # type: ignore[assignment]
   HumanMessage = AIMessage = SystemMessage = None  # type: ignore[assignment]
+  GraphRecursionError = RecursionError  # type: ignore[assignment]
 
 
 logger = logging.getLogger(__name__)
+
+
+def _int_from_env(name: str, default: int, *, min_value: int = 1) -> int:
+  raw_value = os.getenv(name)
+  if raw_value is None:
+    return default
+  try:
+    parsed = int(raw_value)
+  except ValueError:
+    logger.warning("Invalid %s=%s; falling back to %s", name, raw_value, default)
+    return default
+  clamped = max(min_value, parsed)
+  if clamped != parsed:
+    logger.warning("Clamping %s from %s to %s", name, parsed, clamped)
+  return clamped
 
 
 class GraphNotAvailableError(RuntimeError):
@@ -49,6 +64,8 @@ class ChatState(TypedDict, total=False):
   tool_calls: List[Dict[str, Any]]
   tools: List[Dict[str, Any]]
   loop_count: int
+  tool_cap_reached: bool
+  tool_attempts: Dict[str, int]
 
 
 def _ensure_dependencies():
@@ -80,12 +97,20 @@ def _lc_messages_from_history(history: List[Dict[str, Any]]):
   return messages
 
 
+def _tool_signature(tool_name: str, tool_args: dict | None) -> str:
+  serialized_args = json.dumps(tool_args or {}, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+  return f"{tool_name}:{serialized_args}"
+
+
 @dataclass
 class LangGraphClient:
   guardrails: Any = None
   history: List[Dict[str, Any]] = field(default_factory=lambda: [
     {"role": "system", "content": SYSTEM_PROMPT.strip()}
   ])
+  recursion_limit: int = field(init=False)
+  max_tool_loops: int = field(init=False)
+  tool_retry_limit: int = field(init=False)
 
   def __post_init__(self):
     _ensure_dependencies()
@@ -111,10 +136,9 @@ class LangGraphClient:
     self._llm = AzureChatOpenAI(**llm_kwargs)
     self._graph = self._build_graph()
     self._app: CompiledGraph = self._graph.compile()
-    self._tool_cache: Dict[str, Dict[str, Any]] = {}
-    self.max_repeat_calls = int(os.getenv("MCP_MAX_REPEAT_CALLS", "2"))
-    self.tool_cache_ttl = int(os.getenv("MCP_TOOL_CACHE_TTL", "900"))
-    self.tool_cache_max_entries = int(os.getenv("MCP_TOOL_CACHE_MAX_ENTRIES", "64"))
+    self.recursion_limit = _int_from_env("LANGGRAPH_RECURSION_LIMIT", 40, min_value=5)
+    self.max_tool_loops = _int_from_env("LANGGRAPH_MAX_TOOL_LOOPS", 6, min_value=1)
+    self.tool_retry_limit = _int_from_env("LANGGRAPH_TOOL_RETRY_LIMIT", 3, min_value=1)
 
   def _build_graph(self):
     graph = StateGraph(ChatState)
@@ -135,6 +159,7 @@ class LangGraphClient:
       history = state.get("history") or self.history
       user_input = state.get("user_input", "")
       tools = state.get("tools", [])
+      tool_cap_reached = bool(state.get("tool_cap_reached"))
       if not user_input:
         return state
 
@@ -142,7 +167,7 @@ class LangGraphClient:
       messages.append(HumanMessage(content=user_input))
 
       llm = self._llm
-      if tools:
+      if tools and not tool_cap_reached:
         llm = llm.bind(tools=tools, parallel_tool_calls=False)
 
       response = await llm.ainvoke(messages)
@@ -163,10 +188,36 @@ class LangGraphClient:
         {"role": "user", "content": user_input},
         assistant_entry
       ]
+
+      filtered_calls: List[Dict[str, Any]] = []
+      for call in tool_calls:
+        function = call.get("function") or {}
+        tool_name = function.get("name")
+        raw_arguments = function.get("arguments", "")
+        if not tool_name:
+          filtered_calls.append(call)
+          continue
+        try:
+          tool_args = _load_tool_arguments(raw_arguments)
+          tool_args = _normalize_tool_arguments(tool_name, tool_args)
+          tool_args = _populate_default_tool_arguments(tool_name, tool_args, updated_history)
+        except Exception:
+          filtered_calls.append(call)
+          continue
+
+        filtered_call = dict(call)
+        filtered_call["_normalized_args"] = tool_args
+        filtered_calls.append(filtered_call)
+
+      tool_calls = filtered_calls
+
       return {
         "history": updated_history,
         "raw_output": assistant_content,
-        "tool_calls": tool_calls
+        "tool_calls": tool_calls,
+        "tool_cap_reached": tool_cap_reached,
+        "tools": tools if not tool_cap_reached else [],
+        "tool_attempts": state.get("tool_attempts") or {}
       }
 
     async def tool_executor_node(state: ChatState, config: Optional[Dict[str, Any]] = None):
@@ -176,11 +227,12 @@ class LangGraphClient:
 
       updated_history = state.get("history") or self.history
       loop_count = int(state.get("loop_count") or 0) + 1
+      prior_tool_cap = bool(state.get("tool_cap_reached"))
+      loop_cap_triggered_now = (loop_count >= self.max_tool_loops) and not prior_tool_cap
+      tool_attempts: Dict[str, int] = dict(state.get("tool_attempts") or {})
       configurable = (config or {}).get("configurable", {})
       session_id = configurable.get("session_id", "unknown")
       user_id = configurable.get("user_id", "unknown")
-
-      self._prune_tool_cache()
 
       for call in tool_calls:
         function = call.get("function", {})
@@ -191,10 +243,12 @@ class LangGraphClient:
         if not tool_name:
           continue
 
+        tool_args = call.get("_normalized_args")
         try:
-          tool_args = _load_tool_arguments(raw_arguments)
-          tool_args = _normalize_tool_arguments(tool_name, tool_args)
-          tool_args = _populate_default_tool_arguments(tool_name, tool_args, updated_history)
+          if tool_args is None:
+            tool_args = _load_tool_arguments(raw_arguments)
+            tool_args = _normalize_tool_arguments(tool_name, tool_args)
+            tool_args = _populate_default_tool_arguments(tool_name, tool_args, updated_history)
         except Exception as exc:  # noqa: BLE001
           logger.error("Failed to parse tool args for %s: %s", tool_name, exc)
           updated_history.append({
@@ -221,6 +275,23 @@ class LangGraphClient:
           })
           continue
 
+        signature = _tool_signature(tool_name, tool_args)
+        prior_attempts = tool_attempts.get(signature, 0)
+        if prior_attempts >= self.tool_retry_limit:
+          updated_history.append({
+            "role": "system",
+            "content": (
+              f"Skipping tool '{tool_name}' because it has already been called "
+              f"{prior_attempts} times with identical arguments. "
+              "Summarize available information or adjust your plan instead of retrying."
+            ),
+            "ephemeral": True
+          })
+          tool_cap_reached = True
+          continue
+
+        tool_attempts[signature] = prior_attempts + 1
+
         if self.guardrails:
           self.guardrails.guard_tool_call(
             session_id=session_id,
@@ -229,20 +300,7 @@ class LangGraphClient:
             arguments=tool_args
           )
 
-        signature = json.dumps({"tool": tool_name, "args": tool_args}, sort_keys=True)
-        cache_entry = self._tool_cache.get(signature)
-        if cache_entry:
-          tool_response = deepcopy(cache_entry["response"])
-          cache_entry["count"] = cache_entry.get("count", 1) + 1
-          logger.info("LangGraph tool cache hit for %s (count=%s)", tool_name, cache_entry["count"])
-        else:
-          tool_response = await call_tool(tool_name, tool_args)
-          self._tool_cache[signature] = {
-            "response": deepcopy(tool_response),
-            "count": 1,
-            "timestamp": time.time()
-          }
-          logger.debug("LangGraph tool cache miss for %s signature=%s", tool_name, signature)
+        tool_response = await call_tool(tool_name, tool_args)
 
         if self.guardrails:
           self.guardrails.guard_tool_response(
@@ -260,20 +318,25 @@ class LangGraphClient:
           "content": content
         })
 
-        cache_entry = self._tool_cache.get(signature)
-        if cache_entry and cache_entry.get("count", 1) >= self.max_repeat_calls:
-          updated_history.append({
-            "role": "system",
-            "content": (
-              f"You have already called `{tool_name}` with the same arguments multiple times. "
-              "Use the cached data to compose the final response."
-            )
-          })
+      if loop_cap_triggered_now:
+        updated_history.append({
+          "role": "system",
+          "content": (
+            f"Tool loop limit of {self.max_tool_loops} iterations reached. "
+            "Summarize the available data without issuing more tool calls."
+          ),
+          "ephemeral": True
+        })
+
+      tool_cap_reached = prior_tool_cap or loop_cap_triggered_now
 
       return {
         "history": updated_history,
         "tool_calls": [],
-        "loop_count": loop_count
+        "loop_count": loop_count,
+        "tool_cap_reached": tool_cap_reached,
+        "tool_attempts": tool_attempts,
+        "tools": [] if tool_cap_reached else (state.get("tools") or [])
       }
 
     async def formatter_node(state: ChatState, config: Optional[Dict[str, Any]] = None):
@@ -281,7 +344,8 @@ class LangGraphClient:
       return {
         "final_content": markdown,
         "next_questions": next_questions,
-        "history": state.get("history", self.history)
+        "history": state.get("history", self.history),
+        "tool_attempts": state.get("tool_attempts") or {}
       }
 
     graph.add_node("guard_input", guard_input_node)
@@ -313,13 +377,41 @@ class LangGraphClient:
     state: ChatState = {
       "history": self.history,
       "user_input": query,
-      "tools": tools or []
+      "tools": tools or [],
+      "loop_count": 0,
+      "tool_cap_reached": False,
+      "tool_attempts": {}
     }
-    result: ChatState = await self._app.ainvoke(
-      state,
-      config={"configurable": {"session_id": session_id, "user_id": user_id}}
-    )
-    self.history = result.get("history", self.history)
+    config = {
+      "configurable": {"session_id": session_id, "user_id": user_id},
+      "recursion_limit": self.recursion_limit
+    }
+    try:
+      result: ChatState = await self._app.ainvoke(state, config=config)
+    except GraphRecursionError as exc:
+      logger.warning(
+        "LangGraph recursion limit (%s) reached for session=%s user=%s: %s",
+        self.recursion_limit,
+        session_id,
+        user_id,
+        exc
+      )
+      safety_msg = (
+        "I attempted to orchestrate several AWS tool calls but hit the automated safety limit. "
+        "Please narrow the question or try again with a smaller time range."
+      )
+      self.history = state.get("history", self.history)
+      return safety_msg, []
+    history = result.get("history", self.history)
+    filtered_history: List[Dict[str, Any]] = []
+    for entry in history:
+      if entry.get("ephemeral"):
+        continue
+      if "ephemeral" in entry:
+        entry = dict(entry)
+        entry.pop("ephemeral", None)
+      filtered_history.append(entry)
+    self.history = filtered_history or self.history
     return result.get("final_content", ""), result.get("next_questions", [])
 
   async def stream_response(
@@ -348,31 +440,3 @@ class LangGraphClient:
       "content": final_content,
       "next_questions": next_questions
     })
-
-  def _prune_tool_cache(self) -> None:
-    if not self._tool_cache:
-      return
-
-    now = time.time()
-    ttl = max(1, self.tool_cache_ttl)
-    evicted = 0
-
-    for signature in list(self._tool_cache.keys()):
-      entry = self._tool_cache.get(signature) or {}
-      ts = float(entry.get("timestamp", now))
-      if now - ts > ttl:
-        self._tool_cache.pop(signature, None)
-        evicted += 1
-
-    if len(self._tool_cache) > self.tool_cache_max_entries:
-      sorted_items = sorted(
-        self._tool_cache.items(),
-        key=lambda item: item[1].get("timestamp", now)
-      )
-      overflow = len(self._tool_cache) - self.tool_cache_max_entries
-      for signature, _ in sorted_items[:overflow]:
-        self._tool_cache.pop(signature, None)
-        evicted += 1
-
-    if evicted:
-      logger.debug("LangGraph tool cache pruned %s entries (remaining=%s)", evicted, len(self._tool_cache))

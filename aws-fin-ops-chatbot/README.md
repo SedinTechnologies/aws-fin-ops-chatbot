@@ -64,6 +64,8 @@ The bot enforces configurable guardrails to keep every session within allowed AW
 - **Content scanning:** lightweight keyword detection on user input, tool output, and model responses.
 - **Auditing:** structured JSON lines written to the path in `GUARDRAIL_AUDIT_LOG`.
 
+Set `TOOL_RATE_LIMIT_MODE` to control enforcement: `enforce` (block requests), `warn` (log but continue), or `off` (disable rate limiting). The sample `chainlit.env` defaults to `warn` so development sessions are not interrupted even when a tool is called repeatedly.
+
 ### Guardrail Environment Variables
 
 | Variable | Default | Description |
@@ -74,6 +76,7 @@ The bot enforces configurable guardrails to keep every session within allowed AW
 | `MAX_LOOKBACK_DAYS` | `365` | Maximum historical window |
 | `MAX_FORECAST_DAYS` | `90` | Maximum forecast horizon |
 | `TOOL_RATE_LIMITS_JSON` | empty | JSON list of `{tool_name, max_calls, per_seconds}` |
+| `TOOL_RATE_LIMIT_MODE` | `warn` | How to react when a tool exceeds its limit: `enforce`, `warn`, or `off` |
 | `BUDGET_POLICY_JSON` | empty | JSON object, e.g. `{ "monthly_limit_usd": 50000 }` |
 | `GUARDRAIL_AUDIT_LOG` | empty | File path for JSON audit entries |
 
@@ -174,6 +177,7 @@ docker compose ps
 * Ensure the MCP env vars still point to `127.0.0.1` (servers run inside the Chainlit container). If you override them, the hostname must exist on the Docker network or you must set `ENFORCE_LOCAL_MCP=false` and supply matching DNS.
 * For Localstack, confirm that endpoints are correctly configured.
 * If a streamable MCP takes a while to boot (e.g., first launch after pulling images), bump `STREAMABLE_HTTP_READY_TIMEOUT` (default `30s`) and optionally `STREAMABLE_HTTP_READY_INITIAL_DELAY` (default `1s`) so the readiness probe waits long enough before falling back to stdio.
+* Local development without the HTTP transport? Set `AWS_COST_EXPLORER_MCP_TRANSPORT=AWS_CCAPI_MCP_TRANSPORT=stdio` in `chainlit.env` to skip streamable startup entirely and avoid long login delays.
 
 ### Azure OpenAI errors
 
