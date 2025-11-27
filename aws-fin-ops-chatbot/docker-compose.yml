@@ -24,7 +24,6 @@ services:
   #   build:
   #     context: .
   #     dockerfile: prisma.Dockerfile
-  #   stop_grace_period: 0s
   #   depends_on:
   #     - postgres
   #   volumes:
@@ -55,22 +54,13 @@ services:
     env_file:
       - azure-openai.env
       - chainlit.env
-    environment:
-      AWS_COST_EXPLORER_MCP_HOST: 127.0.0.1
-      AWS_COST_EXPLORER_MCP_BIND_HOST: 127.0.0.1
-      AWS_COST_EXPLORER_MCP_CLIENT_HOST: 127.0.0.1
-      AWS_COST_EXPLORER_MCP_URL: http://127.0.0.1:8001/mcp
-      AWS_COST_EXPLORER_MCP_TRANSPORT: streamable-http
-      AWS_CCAPI_MCP_HOST: 127.0.0.1
-      AWS_CCAPI_MCP_BIND_HOST: 127.0.0.1
-      AWS_CCAPI_MCP_CLIENT_HOST: 127.0.0.1
-      AWS_CCAPI_MCP_URL: http://127.0.0.1:8002/mcp
-      AWS_CCAPI_MCP_TRANSPORT: streamable-http
-      AWS_REGION: us-east-1
-      AWS_DEFAULT_REGION: us-east-1
+      - guardrails.env
+      - mcp-servers.env
     volumes:
       - ./chainlit-config.toml:/app/.chainlit/config.toml
-      - ./aws-rf-billingpoc-user.env:/app/aws.env
+      # Need to mount aws env file to give access to MCP servers
+      - ./aws.env:/app/aws.env
+      # Development purposes
       - ./src:/app/src
       - ./scripts:/app/scripts
 

@@ -142,7 +142,7 @@ def _build_mcp_command(
     parts.append(f"AWS_API_MCP_ALLOWED_HOSTS={config['allowed_hosts']}")
   if config.get("allowed_origins"):
     parts.append(f"AWS_API_MCP_ALLOWED_ORIGINS={config['allowed_origins']}")
-  
+
   asgi_app = config.get("asgi_app")
   if asgi_app:
     parts.append(f"MCP_ASGI_APP={asgi_app}")
@@ -275,13 +275,6 @@ async def on_chat_start():
     return
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
-  try:
-    await fetch_registered_mcp_tools_for_user(user)
-  except Exception:  # noqa: BLE001
-    logger.exception(
-      "Failed to pre-register MCP tools for session %s",
-      cl.context.session.id
-    )
 
   use_langgraph = ENABLE_LANGGRAPH
   client = None
@@ -293,12 +286,12 @@ async def on_chat_start():
 
   if not use_langgraph:
     client = AzureOpenAIClient(guardrails=guardrails)
-  
+
   cl.user_session.set("langgraph_enabled", use_langgraph)
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
   cl.user_session.set("memory", [])
-  
+
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
 @cl.on_chat_resume
@@ -342,14 +335,6 @@ async def on_chat_resume(thread: ThreadDict):
 
   # Save the restored memory/context back into the user session
   cl.user_session.set("memory", memory)
-  if user:
-    try:
-      await fetch_registered_mcp_tools_for_user(user)
-    except Exception:  # noqa: BLE001
-      logger.exception(
-        "Failed to re-register MCP tools for resumed session %s",
-        cl.context.session.id
-      )
 
 @cl.on_chat_end
 async def on_chat_end():
@@ -382,7 +367,6 @@ async def new_message(message: cl.Message):
       await cl.Message(content="Unauthorized. Please login.").send()
       return
 
-
     tools = await fetch_registered_mcp_tools_for_user(user)
 
     use_langgraph = bool(cl.user_session.get("langgraph_enabled", False))
@@ -405,14 +389,14 @@ async def new_message(message: cl.Message):
     if use_langgraph:
       logger.info("[HANDLER_DEBUG] Using LangGraph path")
       logger.info(f"[STREAM_DEBUG] Starting LangGraph stream for message: {message.content}")
-      
+
       # Get actual BaseTool objects for LangGraph
       tools = await get_configured_mcp_tools(cl.user_session.get("user"))
       logger.info(f"[STREAM_DEBUG] Loaded {len(tools)} MCP tools for LangGraph")
-      
+
       # Initialize client with tools
       lg_client = LangGraphClient(tools=tools)
-      
+
       response_message = cl.Message(content="")
       buffered_chunks: List[str] = []
       next_questions: List[Dict[str, Any]] = []
@@ -428,23 +412,23 @@ async def new_message(message: cl.Message):
       ):
         if isinstance(chunk, str):
           await response_message.stream_token(chunk)
-      
+
       await response_message.send()
-      
+
       # Post-processing for suggestions
       content = response_message.content
       suggestion_pattern = r"```json_suggestions\s*([\s\S]*?)\s*```"
       match = re.search(suggestion_pattern, content)
-      
+
       if match:
         try:
           json_str = match.group(1)
           suggestions = json.loads(json_str)
-          
+
           # Remove the JSON block from the displayed message
           clean_content = re.sub(suggestion_pattern, "", content).strip()
           response_message.content = clean_content
-          
+
           # Create actions
           actions = []
           for s in suggestions:
@@ -452,7 +436,7 @@ async def new_message(message: cl.Message):
             description = s.get("description")
             if description:
               label = f"{label} - {description}"
-            
+
             actions.append(
               cl.Action(
                 name="next_question_click",
@@ -463,14 +447,14 @@ async def new_message(message: cl.Message):
             )
           response_message.actions = actions
           await response_message.update()
-          
+
         except json.JSONDecodeError:
           logger.warning("Failed to parse suggestions JSON")
         except Exception as e:
           logger.error(f"Error processing suggestions: {e}")
 
       # Update memory if needed (LangGraph manages its own state usually, but for session consistency)
-      # cl.user_session.set("memory", lg_client.history) 
+      # cl.user_session.set("memory", lg_client.history)
       return
 
     # Fallback to AzureOpenAIClient if LangGraph is not used
