@@ -93,8 +93,19 @@ class LangGraphClient:
         workflow = StateGraph(MessagesState)
 
         # Add nodes
+        # Custom tool node with logging
+        async def tool_node_with_logging(state: MessagesState):
+            last_message = state["messages"][-1]
+            if hasattr(last_message, "tool_calls"):
+                for tool_call in last_message.tool_calls:
+                    logger.info(f"[TOOL_DEBUG] Executing tool: {tool_call['name']} with args: {tool_call['args']}")
+            
+            # Use standard ToolNode logic
+            tool_node = ToolNode(self.tools)
+            return await tool_node.ainvoke(state)
+
         workflow.add_node("agent", llm_node)
-        workflow.add_node("tools", ToolNode(self.tools))
+        workflow.add_node("tools", tool_node_with_logging)
 
         # Add edges
         workflow.add_edge(START, "agent")
