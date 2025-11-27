@@ -94,9 +94,10 @@ The application uses several environment variables for configuration. These are 
 | `AZURE_OPENAI_API_KEY` | `azure-openai.env` | - | **Secret**: API Key for Azure OpenAI |
 | `AZURE_OPENAI_API_KEY2` | `azure-openai.env` | - | **Secret**: Secondary API Key |
 | **AWS Credentials** | | | |
-| `AWS_ACCESS_KEY_ID` | `aws-rf-billingpoc-user.env` | - | **Secret**: AWS Access Key ID |
-| `AWS_SECRET_ACCESS_KEY` | `aws-rf-billingpoc-user.env` | - | **Secret**: AWS Secret Access Key |
-| `AWS_DEFAULT_REGION` | `aws-rf-billingpoc-user.env` | `us-east-1` | Default AWS Region |
+| `AWS_ACCESS_KEY_ID` | `aws.env` | - | **Secret**: AWS Access Key ID |
+| `AWS_SECRET_ACCESS_KEY` | `aws.env` | - | **Secret**: AWS Secret Access Key |
+| `AWS_DEFAULT_REGION` | `aws.env` | `us-east-1` | Default AWS Region |
+| `AWS_REGION` | `aws.env` | `us-east-1` | AWS Region for App |
 | **Chainlit Config** | | | |
 | `CHAINLIT_HOST` | `chainlit.env` | `0.0.0.0` | Host for Chainlit server |
 | `CHAINLIT_PORT` | `chainlit.env` | `8000` | Port for Chainlit server |
@@ -111,7 +112,7 @@ The application uses several environment variables for configuration. These are 
 | `BUCKET_NAME` | `chainlit.env` | `aws-fin-ops-bot-data` | S3 Bucket name |
 | `APP_AWS_ACCESS_KEY` | `chainlit.env` | `dummy-key` | AWS Access Key for App (Localstack) |
 | `APP_AWS_SECRET_KEY` | `chainlit.env` | `dummy-key` | AWS Secret Key for App (Localstack) |
-| `APP_AWS_REGION` | `chainlit.env` | `us-east-1` | AWS Region for App |
+| `APP_AWS_REGION` | `chainlit.env` | `us-east-1` | AWS Region for App (Localstack) |
 | `DEV_AWS_ENDPOINT` | `chainlit.env` | `http://localstack:4566` | Localstack endpoint |
 | **Guardrails** | | | |
 | `GUARDRAILS_ENABLED` | `guardrails.env` | `true` | Master switch for guardrails |
@@ -123,15 +124,25 @@ The application uses several environment variables for configuration. These are 
 | `TOOL_RATE_LIMIT_MODE` | `guardrails.env` | `warn` | Rate limit mode: `enforce`, `warn`, `off` |
 | `TOOL_RATE_LIMITS_JSON` | `guardrails.env` | `[]` | JSON for per-tool limits |
 | `BUDGET_POLICY_JSON` | `guardrails.env` | `{}` | JSON for budget policy |
+| **LangGraph Config** | | | |
+| `ENABLE_LANGGRAPH` | `langgraph.env` | `true` | Enable LangGraph |
+| `LANGGRAPH_MAX_TOOL_LOOPS` | `langgraph.env` | `60` | Max tool loops |
+| `LANGGRAPH_RECURSION_LIMIT` | `langgraph.env` | `40` | Recursion limit |
+| `STREAMABLE_HTTP_READY_TIMEOUT` | `langgraph.env` | `25` | Streamable HTTP ready timeout (seconds) |
+| `STREAMABLE_HTTP_READY_INITIAL_DELAY` | `langgraph.env` | `2` | Streamable HTTP ready initial delay (seconds) |
 | **MCP Servers** | | | |
-| `AWS_COST_EXPLORER_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Cost Explorer MCP |
-| `AWS_COST_EXPLORER_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Cost Explorer MCP |
-| `AWS_COST_EXPLORER_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Cost Explorer MCP |
-| `AWS_COST_EXPLORER_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8001/mcp` | URL for Cost Explorer MCP |
-| `AWS_CCAPI_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CCAPI MCP |
-| `AWS_CCAPI_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CCAPI MCP |
-| `AWS_CCAPI_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CCAPI MCP |
-| `AWS_CCAPI_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8002/mcp` | URL for CCAPI MCP |
+| `AWS_COST_EXPLORER_MCP_PORT` | `mcp-servers.env` | `8001` | Port for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8001/mcp` | URL for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Cost Explorer MCP |
+| `AWS_CCAPI_MCP_PORT` | `mcp-servers.env` | `8082` | Port for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8002/mcp` | URL for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for CCAPI MCP Server |
 
 ---
 
