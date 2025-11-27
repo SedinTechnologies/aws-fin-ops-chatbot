@@ -183,6 +183,27 @@ async def fetch_registered_mcp_tools_for_user(user: cl.User):
   return new_registry["tool_specs"]
 
 
+async def get_configured_mcp_tools(user: cl.User) -> List[BaseTool]:
+  """
+  Returns the actual BaseTool objects for the user's configured MCP servers.
+  This is required for LangGraph's ToolNode.
+  """
+  expected_names = _expected_connection_names(user)
+  registry = cl.user_session.get(ADAPTER_STATE_KEY)
+  
+  # Ensure registry is ready
+  if not _registry_ready(registry, expected_names):
+    await fetch_registered_mcp_tools_for_user(user)
+    registry = cl.user_session.get(ADAPTER_STATE_KEY)
+
+  if not registry or "tools" not in registry:
+    return []
+
+  # Extract the actual BaseTool objects from the registry entries
+  tools_map = registry.get("tools", {})
+  return [entry.tool for entry in tools_map.values()]
+
+
 async def deregister_mcp_tools_for_user(user: cl.User):
   await _reset_adapter_state()
 

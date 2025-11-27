@@ -1,4 +1,4 @@
-import os, redis, logging, random, traceback, json, shlex
+import os, redis, logging, random, traceback, json, shlex, re #kiss
 from typing import List, Dict, Any
 
 import chainlit as cl
@@ -9,10 +9,11 @@ from datetime import datetime as _datetime
 
 from mcp_tool_helper import (
   fetch_registered_mcp_tools_for_user,
-  deregister_mcp_tools_for_user
+  deregister_mcp_tools_for_user,
+  get_configured_mcp_tools
 )
 from azure_openai_client import AzureOpenAIClient
-from langgraph_app import LangGraphClient, GraphNotAvailableError
+from langgraph_app import LangGraphClient
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
 from guardrails import GuardrailEngine, GuardrailViolation
@@ -141,10 +142,20 @@ def _build_mcp_command(
     parts.append(f"AWS_API_MCP_ALLOWED_HOSTS={config['allowed_hosts']}")
   if config.get("allowed_origins"):
     parts.append(f"AWS_API_MCP_ALLOWED_ORIGINS={config['allowed_origins']}")
+  
+  asgi_app = config.get("asgi_app")
+  if asgi_app:
+    parts.append(f"MCP_ASGI_APP={asgi_app}")
+    logger.info(f"MCP command includes ASGI app: {asgi_app}")
+  else:
+    logger.warning(f"MCP command missing ASGI app for config: {config}")
+
   parts.append(
     f"/app/scripts/start-mcp-server.sh {quoted_role_arn} {package_arg}"
   )
-  return " ".join(parts)
+  command = " ".join(parts)
+  logger.info(f"Generated MCP command: {command}")
+  return command
 
 cost_explorer_mcp = _build_mcp_config(
   "AWS_COST_EXPLORER_MCP",
@@ -153,6 +164,9 @@ cost_explorer_mcp = _build_mcp_config(
   default_transport="streamable-http",
   default_client_host="127.0.0.1"
 )
+# Add ASGI app path for Cost Explorer (uses 'app' instance)
+cost_explorer_mcp["asgi_app"] = "awslabs.cost_explorer_mcp_server.server:app.streamable_http_app"
+
 ccapi_mcp = _build_mcp_config(
   "AWS_CCAPI_MCP",
   default_host="0.0.0.0",
@@ -160,6 +174,12 @@ ccapi_mcp = _build_mcp_config(
   default_transport="streamable-http",
   default_client_host="127.0.0.1"
 )
+# Add ASGI app path for Cloud Control (uses 'mcp' instance)
+ccapi_mcp["asgi_app"] = "awslabs.ccapi_mcp_server.server:mcp.streamable_http_app"
+
+# Debug: Print configs to verify asgi_app is set
+print(f"[DEBUG] cost_explorer_mcp has asgi_app: {'asgi_app' in cost_explorer_mcp}, value: {cost_explorer_mcp.get('asgi_app')}")
+print(f"[DEBUG] ccapi_mcp has asgi_app: {'asgi_app' in ccapi_mcp}, value: {ccapi_mcp.get('asgi_app')}")
 
 
 def _streamable_transport_metadata(config: Dict[str, str]):
@@ -192,8 +212,10 @@ async def set_starters():
 
 @cl.password_auth_callback
 async def auth_callback(username: str, password: str):
+  print(f"[AUTH_DEBUG] auth_callback called for username: {username}")
   user = auth.authenticate(username, password)
   if not user:
+    print("[AUTH_DEBUG] Authentication failed")
     return None
   cost_explorer_transport = _streamable_transport_metadata(cost_explorer_mcp)
   ccapi_transport = _streamable_transport_metadata(ccapi_mcp)
@@ -253,20 +275,6 @@ async def on_chat_start():
     return
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
-  use_langgraph = ENABLE_LANGGRAPH
-  client = None
-  if use_langgraph:
-    try:
-      client = LangGraphClient(guardrails=guardrails)
-    except GraphNotAvailableError:
-      logger.warning("LangGraph dependencies missing; falling back to AzureOpenAIClient")
-      use_langgraph = False
-  if not use_langgraph:
-    client = AzureOpenAIClient(guardrails=guardrails)
-  cl.user_session.set("langgraph_enabled", use_langgraph)
-  cl.user_session.set("client", client)
-  cl.user_session.set("mcp_tools", {})
-  cl.user_session.set("memory", [])
   try:
     await fetch_registered_mcp_tools_for_user(user)
   except Exception:  # noqa: BLE001
@@ -274,6 +282,23 @@ async def on_chat_start():
       "Failed to pre-register MCP tools for session %s",
       cl.context.session.id
     )
+
+  use_langgraph = ENABLE_LANGGRAPH
+  client = None
+  if use_langgraph:
+    # Get the tool objects for LangGraph
+    from mcp_tool_helper import get_configured_mcp_tools
+    tools = await get_configured_mcp_tools(user)
+    client = LangGraphClient(tools=tools)
+
+  if not use_langgraph:
+    client = AzureOpenAIClient(guardrails=guardrails)
+  
+  cl.user_session.set("langgraph_enabled", use_langgraph)
+  cl.user_session.set("client", client)
+  cl.user_session.set("mcp_tools", {})
+  cl.user_session.set("memory", [])
+  
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
 @cl.on_chat_resume
@@ -296,17 +321,21 @@ async def on_chat_resume(thread: ThreadDict):
   use_langgraph = ENABLE_LANGGRAPH
   client = None
   if use_langgraph:
+    # Get the tool objects for LangGraph
+    from mcp_tool_helper import get_configured_mcp_tools
+    # Note: We might need to re-fetch tools if they are not in session
+    # But for resume, we assume session is active or we re-fetch
     try:
-      client = LangGraphClient(guardrails=guardrails)
-    except GraphNotAvailableError:
-      logger.warning("LangGraph dependencies missing; falling back to AzureOpenAIClient")
-      use_langgraph = False
+       await fetch_registered_mcp_tools_for_user(user)
+       tools = await get_configured_mcp_tools(user)
+       client = LangGraphClient(tools=tools)
+    except Exception:
+       logger.warning("Failed to initialize LangGraph client on resume; falling back")
+       use_langgraph = False
+
   if not use_langgraph:
     client = AzureOpenAIClient(guardrails=guardrails)
     client.messages.extend(memory)
-  else:
-    base_history = client.history[:1]
-    client.history = base_history + memory
   cl.user_session.set("langgraph_enabled", use_langgraph)
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
@@ -346,22 +375,27 @@ async def on_mcp_connect(connection, session: ClientSession):
 
 @cl.on_message
 async def new_message(message: cl.Message):
+  logger.info(f"[HANDLER_DEBUG] new_message called with: {message.content[:50]}")
   try:
     user = cl.user_session.get("user")
     if not user:
       await cl.Message(content="Unauthorized. Please login.").send()
       return
 
+
     tools = await fetch_registered_mcp_tools_for_user(user)
 
     use_langgraph = bool(cl.user_session.get("langgraph_enabled", False))
+    logger.info(f"[HANDLER_DEBUG] use_langgraph={use_langgraph}, langgraph_enabled={cl.user_session.get('langgraph_enabled')}")
     client = cl.user_session.get("client")
+    logger.info(f"[HANDLER_DEBUG] client type: {type(client).__name__}")
     if client is None:
       await cl.Message(content="Session not initialized. Please refresh and try again.").send()
       return
     guardrails: GuardrailEngine = cl.user_session.get("guardrails")
 
     if not use_langgraph:
+      logger.info("[HANDLER_DEBUG] Using non-LangGraph path (AzureOpenAIClient)")
       guardrails.guard_input(
         session_id=cl.context.session.id,
         user_id=user.identifier,
@@ -369,58 +403,77 @@ async def new_message(message: cl.Message):
       )
 
     if use_langgraph:
-      lg_client: LangGraphClient = client
+      logger.info("[HANDLER_DEBUG] Using LangGraph path")
+      logger.info(f"[STREAM_DEBUG] Starting LangGraph stream for message: {message.content}")
+      
+      # Get actual BaseTool objects for LangGraph
+      tools = await get_configured_mcp_tools(cl.user_session.get("user"))
+      logger.info(f"[STREAM_DEBUG] Loaded {len(tools)} MCP tools for LangGraph")
+      
+      # Initialize client with tools
+      lg_client = LangGraphClient(tools=tools)
+      
       response_message = cl.Message(content="")
       buffered_chunks: List[str] = []
       next_questions: List[Dict[str, Any]] = []
 
+      logger.info(f"[STREAM_DEBUG] Starting LangGraph stream for message: {message.content[:50]}")
+      logger.info(f"[STREAM_DEBUG] Passing {len(tools)} tools to LangGraph: {[t.name for t in tools[:5]]}")
+      chunk_count = 0
       async for chunk in lg_client.stream_response(
-        message.content,
-        session_id=cl.context.session.id,
-        user_id=user.identifier,
-        tools=tools
+        message=message.content,
+        session_id=cl.user_session.get("id"),
+        user_id=cl.user_session.get("user").identifier,
+        guardrails=cl.user_session.get("guardrails")
       ):
-        try:
-          payload = json.loads(chunk)
-        except json.JSONDecodeError:
-          buffered_chunks.append(chunk)
-          if not response_message.id:
-            await response_message.send()
+        if isinstance(chunk, str):
           await response_message.stream_token(chunk)
-          continue
-
-        if payload.get("type") == "final":
-          next_questions = payload.get("next_questions", [])
-          final_content = payload.get("content", "")
-
-          guardrails.guard_model_response(
-            session_id=cl.context.session.id,
-            user_id=user.identifier,
-            content=final_content
-          )
-
-          if not response_message.id:
-            await response_message.send()
-
-          response_message.content = final_content or "".join(buffered_chunks)
-          msg_actions = [
-            cl.Action(
-              name="next_question_click",
-              icon=nq["icon"],
-              label=nq["question"],
-              payload={"question": nq["question"]}
-            ) for nq in next_questions
-          ] if next_questions else []
-          response_message.actions = msg_actions
+      
+      await response_message.send()
+      
+      # Post-processing for suggestions
+      content = response_message.content
+      suggestion_pattern = r"```json_suggestions\s*([\s\S]*?)\s*```"
+      match = re.search(suggestion_pattern, content)
+      
+      if match:
+        try:
+          json_str = match.group(1)
+          suggestions = json.loads(json_str)
+          
+          # Remove the JSON block from the displayed message
+          clean_content = re.sub(suggestion_pattern, "", content).strip()
+          response_message.content = clean_content
+          
+          # Create actions
+          actions = []
+          for s in suggestions:
+            label = s.get("label", s.get("question")[:20])
+            description = s.get("description")
+            if description:
+              label = f"{label} - {description}"
+            
+            actions.append(
+              cl.Action(
+                name="next_question_click",
+                icon=s.get("icon", "👉"),
+                label=label,
+                payload={"question": s.get("question")}
+              )
+            )
+          response_message.actions = actions
           await response_message.update()
-        else:
-          if not response_message.id:
-            await response_message.send()
-          await response_message.stream_token(chunk if isinstance(chunk, str) else str(chunk))
+          
+        except json.JSONDecodeError:
+          logger.warning("Failed to parse suggestions JSON")
+        except Exception as e:
+          logger.error(f"Error processing suggestions: {e}")
 
-      cl.user_session.set("memory", lg_client.history)
+      # Update memory if needed (LangGraph manages its own state usually, but for session consistency)
+      # cl.user_session.set("memory", lg_client.history) 
       return
 
+    # Fallback to AzureOpenAIClient if LangGraph is not used
     az_client: AzureOpenAIClient = client
 
     az_client.messages.extend(cl.user_session.get("memory", [])) # Add existing messages if any
