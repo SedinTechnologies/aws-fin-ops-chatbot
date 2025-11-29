@@ -126,6 +126,7 @@ def _build_mcp_command(
   enforce_local = "true" if ENFORCE_LOCAL_MCP else "false"
   parts = [
     f"AWS_API_MCP_TRANSPORT={transport}",
+    f"AUTH_TYPE={config['auth']}",
     f"AWS_API_MCP_HOST={config['host']}",
     f"AWS_API_MCP_PORT={config['port']}",
     f"ENFORCE_LOCAL_MCP={enforce_local}"
@@ -177,9 +178,7 @@ ccapi_mcp = _build_mcp_config(
 # Add ASGI app path for Cloud Control (uses 'mcp' instance)
 ccapi_mcp["asgi_app"] = "awslabs.ccapi_mcp_server.server:mcp.streamable_http_app"
 
-# Debug: Print configs to verify asgi_app is set
-print(f"[DEBUG] cost_explorer_mcp has asgi_app: {'asgi_app' in cost_explorer_mcp}, value: {cost_explorer_mcp.get('asgi_app')}")
-print(f"[DEBUG] ccapi_mcp has asgi_app: {'asgi_app' in ccapi_mcp}, value: {ccapi_mcp.get('asgi_app')}")
+
 
 
 def _streamable_transport_metadata(config: Dict[str, str]):
@@ -238,6 +237,7 @@ async def auth_callback(username: str, password: str):
     package_name="awslabs.cost-explorer-mcp-server",
     transport_override="stdio"
   )
+
   ccapi_stdio_command = _build_mcp_command(
     config=ccapi_mcp,
     role_arn=user["aws_role_arn"],
@@ -245,6 +245,9 @@ async def auth_callback(username: str, password: str):
     package_name="awslabs.ccapi-mcp-server",
     transport_override="stdio"
   )
+
+
+
   return cl.User(
     identifier=user["identifier"],
     display_name=user["name"],
@@ -340,7 +343,8 @@ async def on_chat_resume(thread: ThreadDict):
 async def on_chat_end():
   user = cl.user_session.get("user")
   if user:
-    await deregister_mcp_tools_for_user(user)
+    # Do not deregister MCP tools on chat end to allow reuse across sessions/chats
+    # await deregister_mcp_tools_for_user(user)
     cl.user_session.set("mcp_tools", {})
     logger.info(f"User {user.display_name} session ended with ID: {cl.context.session.id}")
 

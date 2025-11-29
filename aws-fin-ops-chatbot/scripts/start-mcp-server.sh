@@ -56,6 +56,12 @@ if [ "$AWS_API_MCP_TRANSPORT" = "streamable-http" ] && [ -n "$MCP_ASGI_APP" ]; t
   PACKAGE_ARG="$1"
   shift
   
+  # Convert package@version to PEP 508 requirement for --with
+  # 1. Remove @latest (implies latest version, so no constraint needed)
+  # 2. Replace remaining @ with == (for specific versions)
+  WITH_ARG="${PACKAGE_ARG//@latest/}"
+  WITH_ARG="${WITH_ARG//@/==}"
+  
   # We need to run uvicorn in the context of the package dependencies
   exec env \
     AWS_API_MCP_TRANSPORT="${AWS_API_MCP_TRANSPORT}" \
@@ -69,7 +75,7 @@ if [ "$AWS_API_MCP_TRANSPORT" = "streamable-http" ] && [ -n "$MCP_ASGI_APP" ]; t
     AWS_API_MCP_ALLOWED_ORIGINS="${AWS_API_MCP_ALLOWED_ORIGINS}" \
     AWS_REGION="${AWS_REGION:-us-east-1}" \
     AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}" \
-    uvx --verbose --with "$PACKAGE_ARG" uvicorn "$MCP_ASGI_APP" --host "$AWS_API_MCP_BIND_HOST" --port "$AWS_API_MCP_PORT"
+    uvx --verbose --with "$WITH_ARG" uvicorn "$MCP_ASGI_APP" --host "$AWS_API_MCP_BIND_HOST" --port "$AWS_API_MCP_PORT"
 else
   echo "Starting MCP server with standard entry point..." >&2
   exec env \

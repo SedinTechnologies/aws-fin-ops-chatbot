@@ -236,7 +236,8 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
       connection = None
 
   if connection is None:
-    stdio_command = connection_meta.get("stdio_command") or connection_meta.get("command")
+    stdio_command = connection_meta.get("stdio_command")
+    logger.info(f"[DEBUG] Fallback to stdio for {name}. stdio_command: {stdio_command}")
     if not stdio_command:
       if last_exception:
         raise last_exception
@@ -361,6 +362,10 @@ def _build_stdio_connection(command: str) -> Connection:
   }
 
 
+# Global registry to track MCP processes across sessions
+# Key: mcp_name, Value: asyncio.subprocess.Process
+MCP_SERVER_REGISTRY: Dict[str, asyncio.subprocess.Process] = {}
+
 async def _ensure_streamable_http_process(
   mcp_name: str,
   command: str | None,
@@ -373,8 +378,24 @@ async def _ensure_streamable_http_process(
     )
     return False
 
+  # Check global registry first
+  existing_proc = MCP_SERVER_REGISTRY.get(mcp_name)
+  if existing_proc:
+    if existing_proc.returncode is None:
+      logger.info("Reusing existing global MCP process for '%s'", mcp_name)
+      # Also update session for cleanup purposes if needed, though we might want to keep it global
+      processes = cl.user_session.get(STREAMABLE_PROC_KEY) or {}
+      processes[mcp_name] = existing_proc
+      cl.user_session.set(STREAMABLE_PROC_KEY, processes)
+      return True
+    else:
+      # Process died, remove from registry
+      logger.warning("Existing global MCP process for '%s' died with code %s", mcp_name, existing_proc.returncode)
+      MCP_SERVER_REGISTRY.pop(mcp_name, None)
+
+  # Also check session (though less likely to be useful if session cleared)
   processes = cl.user_session.get(STREAMABLE_PROC_KEY) or {}
-  existing_proc: asyncio.subprocess.Process | None = processes.get(mcp_name)
+  existing_proc = processes.get(mcp_name)
 
   if existing_proc and existing_proc.returncode is None:
     return False
@@ -385,9 +406,13 @@ async def _ensure_streamable_http_process(
   logger.info("Starting streamable HTTP MCP server '%s' with command: %s", mcp_name, command)
   proc = await asyncio.create_subprocess_shell(
     command,
-    stdout=asyncio.subprocess.DEVNULL,
-    stderr=asyncio.subprocess.DEVNULL
+    stdout=None,
+    stderr=None
   )
+  
+  # Store in global registry
+  MCP_SERVER_REGISTRY[mcp_name] = proc
+  
   processes[mcp_name] = proc
   cl.user_session.set(STREAMABLE_PROC_KEY, processes)
 
@@ -431,6 +456,10 @@ async def _stop_streamable_http_process(mcp_name: str):
     await proc.wait()
 
   cl.user_session.set(STREAMABLE_PROC_KEY, processes)
+  
+  # Remove from global registry
+  if mcp_name in MCP_SERVER_REGISTRY:
+    MCP_SERVER_REGISTRY.pop(mcp_name, None)
 
 
 def _format_tool_response(result: Any) -> List[Dict[str, Any]]:
