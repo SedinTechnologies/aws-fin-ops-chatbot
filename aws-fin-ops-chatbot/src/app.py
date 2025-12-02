@@ -583,8 +583,8 @@ async def new_message(message: cl.Message):
       # Post-processing for suggestions
       content = response_message.content
       # More robust pattern to capture JSON array even if backticks are missing or malformed
-      # Captures: optional opening backticks/tag, then the JSON array, then optional closing backticks
-      suggestion_pattern = r"(?:```json_suggestions)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*(?:```)?"
+      # Captures: optional 'json_suggestions' label, optional 'json' label (with/without backticks), then the JSON array
+      suggestion_pattern = r"(?:(?:\n|^)json_suggestions)?\s*(?:```)?(?:json(?:_suggestions)?)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*(?:```)?"
       match = re.search(suggestion_pattern, content)
 
       if match:

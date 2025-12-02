@@ -6,7 +6,11 @@
   --font-primary: 'Inter', sans-serif;
 }
 
-body, button, input, textarea, .cl-font-primary {
+body,
+button,
+input,
+textarea,
+.cl-font-primary {
   font-family: var(--font-primary) !important;
 }
 
@@ -21,7 +25,8 @@ body, button, input, textarea, .cl-font-primary {
 
 /* User Message */
 .cl-user-message .cl-message-content {
-  background-color: #eff6ff; /* Light blue background */
+  background-color: #eff6ff;
+  /* Light blue background */
   border: 1px solid #dbeafe;
   border-radius: 12px;
   padding: 12px 16px;
@@ -74,8 +79,8 @@ button.cl-button {
 }
 
 /* Control row: copy + thumbs */
-.-ml-1\.5.flex.items-center.flex-wrap > button.inline-flex.items-center:is(.h-9.w-9),
-.-ml-1\.5.flex.items-center.flex-wrap > div:has(button.inline-flex.items-center.h-9.w-9) {
+.-ml-1\.5.flex.items-center.flex-wrap>button.inline-flex.items-center:is(.h-9.w-9),
+.-ml-1\.5.flex.items-center.flex-wrap>div:has(button.inline-flex.items-center.h-9.w-9) {
   flex: 0 0 auto;
   width: auto;
   order: 0;
@@ -89,14 +94,14 @@ button.cl-button {
 }
 
 /* Keep primary controls together at the top */
-.-ml-1\.5.flex.items-center.flex-wrap > button.inline-flex.items-center:is(.h-9.w-9),
-.-ml-1\.5.flex.items-center.flex-wrap > div:has(button.inline-flex.items-center.h-9.w-9) {
+.-ml-1\.5.flex.items-center.flex-wrap>button.inline-flex.items-center:is(.h-9.w-9),
+.-ml-1\.5.flex.items-center.flex-wrap>div:has(button.inline-flex.items-center.h-9.w-9) {
   flex: 0 0 auto;
   width: auto;
   order: 0;
 }
 
-.-ml-1\.5.flex.items-center.flex-wrap > button.inline-flex.items-center:not(.h-9.w-9) {
+.-ml-1\.5.flex.items-center.flex-wrap>button.inline-flex.items-center:not(.h-9.w-9) {
   width: 100%;
   justify-content: flex-start;
   flex: 1 1 100%;
@@ -112,8 +117,106 @@ button.cl-button {
   transition: all 0.2s;
 }
 
-.-ml-1\.5.flex.items-center.flex-wrap > button.inline-flex.items-center:not(.h-9.w-9):hover {
+.-ml-1\.5.flex.items-center.flex-wrap>button.inline-flex.items-center:not(.h-9.w-9):hover {
   background-color: #e2e8f0;
   border-color: #94a3b8;
   transform: translateY(-1px);
+}
+
+/* Typography Enhancements */
+.cl-message-content h1,
+.cl-message-content h2,
+.cl-message-content h3,
+.cl-message-content h4,
+.cl-message-content h5,
+.cl-message-content h6 {
+  font-family: var(--font-primary) !important;
+  font-weight: 600;
+  color: #1e293b;
+  /* Slate 800 */
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+  line-height: 1.3;
+}
+
+.cl-message-content h1 {
+  font-size: 1.5rem;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 0.3em;
+}
+
+.cl-message-content h2 {
+  font-size: 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.3em;
+}
+
+.cl-message-content h3 {
+  font-size: 1.1rem;
+  color: #334155;
+  /* Slate 700 */
+}
+
+/* Premium Code Blocks */
+.cl-message-content code {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  background-color: #f1f5f9;
+  /* Slate 100 */
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #0f172a;
+  /* Slate 900 */
+}
+
+.cl-message-content pre {
+  background-color: #1e293b !important;
+  /* Slate 800 */
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
+}
+
+.cl-message-content pre code {
+  background-color: transparent;
+  color: #f8fafc;
+  /* Slate 50 */
+  padding: 0;
+}
+
+/* Styled Tables */
+.cl-message-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.95rem;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.cl-message-content th {
+  background-color: #f8fafc;
+  /* Slate 50 */
+  color: #475569;
+  /* Slate 600 */
+  font-weight: 600;
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cl-message-content td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+  /* Slate 700 */
+}
+
+.cl-message-content tr:last-child td {
+  border-bottom: none;
+}
+
+.cl-message-content tr:hover td {
+  background-color: #f8fafc;
 }
