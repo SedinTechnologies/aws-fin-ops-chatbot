@@ -582,44 +582,48 @@ async def new_message(message: cl.Message):
 
       # Post-processing for suggestions
       content = response_message.content
-      # More robust pattern to capture JSON array even if backticks are missing or malformed
-      # Captures: optional 'json_suggestions' label, optional 'json' label (with/without backticks), then the JSON array
-      suggestion_pattern = r"(?:(?:\n|^)json_suggestions)?\s*(?:```)?(?:json(?:_suggestions)?)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*(?:```)?"
-      match = re.search(suggestion_pattern, content)
+      
+      # Robust pattern to find the START of the suggestions block
+      # Matches 'json_suggestions' or '```json_suggestions' at the start of a line or after a newline
+      start_pattern = r"(?:(?:\n|^)json_suggestions|```json_suggestions)"
+      match = re.search(start_pattern, content)
 
       if match:
-        try:
-          json_str = match.group(1)
-          suggestions = json.loads(json_str)
-
-          # Remove the JSON block from the displayed message
-          # We use the full match to remove everything including the tags
-          clean_content = content.replace(match.group(0), "").strip()
-          response_message.content = clean_content
-
-          # Create actions
-          actions = []
-          for s in suggestions:
-            label = s.get("label", s.get("question")[:20])
-            description = s.get("description")
-            if description:
-              label = f"{label} - {description}"
-
-            actions.append(
-              cl.Action(
-                name="next_question_click",
-                icon=s.get("icon", "👉"),
-                label=label,
-                payload={"question": s.get("question")}
-              )
-            )
-          response_message.actions = actions
+          # Extract the potential block from the match start to the end of the string
+          block = content[match.start():]
+          
+          # Try to extract JSON from the block
+          json_match = re.search(r"(\[\s*\{[\s\S]*)", block)
+          if json_match:
+              json_text = json_match.group(1)
+              # Remove potential closing backticks if present
+              json_text = re.sub(r"\s*```\s*$", "", json_text)
+              
+              try:
+                  suggestions = json.loads(json_text)
+                  actions = []
+                  for s in suggestions:
+                      label = s.get("label", s.get("question")[:20])
+                      description = s.get("description")
+                      if description:
+                          label = f"{label} - {description}"
+                      
+                      actions.append(
+                          cl.Action(
+                              name="next_question_click",
+                              icon=s.get("icon", "👉"),
+                              label=label,
+                              payload={"question": s.get("question")}
+                          )
+                      )
+                  response_message.actions = actions
+              except json.JSONDecodeError:
+                  # JSON is likely truncated or malformed. We log it but don't crash.
+                  pass
+          
+          # ALWAYS strip the matched block from the content to prevent raw text leakage
+          response_message.content = content[:match.start()].strip()
           await response_message.update()
-
-        except json.JSONDecodeError:
-          logger.warning("Failed to parse suggestions JSON")
-        except Exception as e:
-          logger.error(f"Error processing suggestions: {e}")
 
       # Update memory if needed (LangGraph manages its own state usually, but for session consistency)
       # cl.user_session.set("memory", lg_client.history)
