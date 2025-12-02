@@ -421,7 +421,9 @@ async def new_message(message: cl.Message):
 
       # Post-processing for suggestions
       content = response_message.content
-      suggestion_pattern = r"```json_suggestions\s*([\s\S]*?)\s*```"
+      # More robust pattern to capture JSON array even if backticks are missing or malformed
+      # Captures: optional opening backticks/tag, then the JSON array, then optional closing backticks
+      suggestion_pattern = r"(?:```json_suggestions)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*(?:```)?"
       match = re.search(suggestion_pattern, content)
 
       if match:
@@ -430,7 +432,8 @@ async def new_message(message: cl.Message):
           suggestions = json.loads(json_str)
 
           # Remove the JSON block from the displayed message
-          clean_content = re.sub(suggestion_pattern, "", content).strip()
+          # We use the full match to remove everything including the tags
+          clean_content = content.replace(match.group(0), "").strip()
           response_message.content = clean_content
 
           # Create actions
