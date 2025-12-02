@@ -47,6 +47,10 @@ auth = AuthManager(store)
 
 CCAPI_MCP_SERVER_VERSION = os.getenv("CCAPI_MCP_SERVER_VERSION", "latest")
 AWS_COST_EXPLORER_MCP_SERVER_VERSION = os.getenv("AWS_COST_EXPLORER_MCP_SERVER_VERSION", "latest")
+AWS_CLOUDWATCH_MCP_SERVER_VERSION = os.getenv("AWS_CLOUDWATCH_MCP_SERVER_VERSION", "latest")
+AWS_BILLING_MCP_SERVER_VERSION = os.getenv("AWS_BILLING_MCP_SERVER_VERSION", "latest")
+AWS_CLOUDTRAIL_MCP_SERVER_VERSION = os.getenv("AWS_CLOUDTRAIL_MCP_SERVER_VERSION", "latest")
+AWS_PRICING_MCP_SERVER_VERSION = os.getenv("AWS_PRICING_MCP_SERVER_VERSION", "latest")
 ENABLE_LANGGRAPH = os.getenv("ENABLE_LANGGRAPH", "false").lower() == "true"
 ENFORCE_LOCAL_MCP = os.getenv("ENFORCE_LOCAL_MCP", "true").lower() == "true"
 
@@ -178,6 +182,43 @@ ccapi_mcp = _build_mcp_config(
 # Add ASGI app path for Cloud Control (uses 'mcp' instance)
 ccapi_mcp["asgi_app"] = "awslabs.ccapi_mcp_server.server:mcp.streamable_http_app"
 
+cloudwatch_mcp = _build_mcp_config(
+  "AWS_CLOUDWATCH_MCP",
+  default_host="0.0.0.0",
+  default_port="8003",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+# Add ASGI app path for CloudWatch (uses 'mcp' instance)
+cloudwatch_mcp["asgi_app"] = "awslabs.cloudwatch_mcp_server.server:mcp.streamable_http_app"
+
+billing_mcp = _build_mcp_config(
+  "AWS_BILLING_MCP",
+  default_host="0.0.0.0",
+  default_port="8004",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+billing_mcp["asgi_app"] = "awslabs.billing_cost_management_mcp_server.server:mcp.streamable_http_app"
+
+cloudtrail_mcp = _build_mcp_config(
+  "AWS_CLOUDTRAIL_MCP",
+  default_host="0.0.0.0",
+  default_port="8005",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+cloudtrail_mcp["asgi_app"] = "awslabs.cloudtrail_mcp_server.server:mcp.streamable_http_app"
+
+pricing_mcp = _build_mcp_config(
+  "AWS_PRICING_MCP",
+  default_host="0.0.0.0",
+  default_port="8006",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+pricing_mcp["asgi_app"] = "awslabs.aws_pricing_mcp_server.server:mcp.streamable_http_app"
+
 
 
 
@@ -209,15 +250,14 @@ async def set_starters():
   random_seed_questions = random.sample(seed_questions, 3)
   return [cl.Starter(label=q, message=q) for q in random_seed_questions]
 
-@cl.password_auth_callback
-async def auth_callback(username: str, password: str):
-  print(f"[AUTH_DEBUG] auth_callback called for username: {username}")
-  user = auth.authenticate(username, password)
-  if not user:
-    print("[AUTH_DEBUG] Authentication failed")
-    return None
+def _build_mcp_connections(user: Dict[str, Any]) -> List[Dict[str, Any]]:
   cost_explorer_transport = _streamable_transport_metadata(cost_explorer_mcp)
   ccapi_transport = _streamable_transport_metadata(ccapi_mcp)
+  cloudwatch_transport = _streamable_transport_metadata(cloudwatch_mcp)
+  billing_transport = _streamable_transport_metadata(billing_mcp)
+  cloudtrail_transport = _streamable_transport_metadata(cloudtrail_mcp)
+  pricing_transport = _streamable_transport_metadata(pricing_mcp)
+
   cost_explorer_command = _build_mcp_command(
     config=cost_explorer_mcp,
     role_arn=user["aws_role_arn"],
@@ -230,6 +270,31 @@ async def auth_callback(username: str, password: str):
     server_version=CCAPI_MCP_SERVER_VERSION,
     package_name="awslabs.ccapi-mcp-server"
   )
+  cloudwatch_command = _build_mcp_command(
+    config=cloudwatch_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDWATCH_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudwatch-mcp-server"
+  )
+  billing_command = _build_mcp_command(
+    config=billing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_BILLING_MCP_SERVER_VERSION,
+    package_name="awslabs.billing-cost-management-mcp-server"
+  )
+  cloudtrail_command = _build_mcp_command(
+    config=cloudtrail_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDTRAIL_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudtrail-mcp-server"
+  )
+  pricing_command = _build_mcp_command(
+    config=pricing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_PRICING_MCP_SERVER_VERSION,
+    package_name="awslabs.aws-pricing-mcp-server"
+  )
+
   cost_explorer_stdio_command = _build_mcp_command(
     config=cost_explorer_mcp,
     role_arn=user["aws_role_arn"],
@@ -237,7 +302,6 @@ async def auth_callback(username: str, password: str):
     package_name="awslabs.cost-explorer-mcp-server",
     transport_override="stdio"
   )
-
   ccapi_stdio_command = _build_mcp_command(
     config=ccapi_mcp,
     role_arn=user["aws_role_arn"],
@@ -245,27 +309,91 @@ async def auth_callback(username: str, password: str):
     package_name="awslabs.ccapi-mcp-server",
     transport_override="stdio"
   )
+  cloudwatch_stdio_command = _build_mcp_command(
+    config=cloudwatch_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDWATCH_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudwatch-mcp-server",
+    transport_override="stdio"
+  )
+  billing_stdio_command = _build_mcp_command(
+    config=billing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_BILLING_MCP_SERVER_VERSION,
+    package_name="awslabs.billing-cost-management-mcp-server",
+    transport_override="stdio"
+  )
+  cloudtrail_stdio_command = _build_mcp_command(
+    config=cloudtrail_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDTRAIL_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudtrail-mcp-server",
+    transport_override="stdio"
+  )
+  pricing_stdio_command = _build_mcp_command(
+    config=pricing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_PRICING_MCP_SERVER_VERSION,
+    package_name="awslabs.aws-pricing-mcp-server",
+    transport_override="stdio"
+  )
 
+  connections = [
+    {
+      "name": "aws-cost-explorer-mcp-server",
+      "command": cost_explorer_command,
+      "stdio_command": cost_explorer_stdio_command,
+      **({"transport": cost_explorer_transport} if cost_explorer_transport else {})
+    },
+    {
+      "name": "aws-ccapi-mcp-server",
+      "command": ccapi_command,
+      "stdio_command": ccapi_stdio_command,
+      **({"transport": ccapi_transport} if ccapi_transport else {})
+    },
+    {
+      "name": "aws-cloudwatch-mcp-server",
+      "command": cloudwatch_command,
+      "stdio_command": cloudwatch_stdio_command,
+      **({"transport": cloudwatch_transport} if cloudwatch_transport else {})
+    },
+    {
+      "name": "aws-billing-mcp-server",
+      "command": billing_command,
+      "stdio_command": billing_stdio_command,
+      **({"transport": billing_transport} if billing_transport else {})
+    },
+    {
+      "name": "aws-cloudtrail-mcp-server",
+      "command": cloudtrail_command,
+      "stdio_command": cloudtrail_stdio_command,
+      **({"transport": cloudtrail_transport} if cloudtrail_transport else {})
+    },
+    {
+      "name": "aws-pricing-mcp-server",
+      "command": pricing_command,
+      "stdio_command": pricing_stdio_command,
+      **({"transport": pricing_transport} if pricing_transport else {})
+    }
+  ]
+  
+  return connections
 
+@cl.password_auth_callback
+async def auth_callback(username: str, password: str):
+  print(f"[AUTH_DEBUG] auth_callback called for username: {username}")
+  user = auth.authenticate(username, password)
+  if not user:
+    print("[AUTH_DEBUG] Authentication failed")
+    return None
+
+  mcp_connections = _build_mcp_connections(user)
 
   return cl.User(
     identifier=user["identifier"],
     display_name=user["name"],
     metadata={
-      "mcp_connections": [
-        {
-          "name": "aws-cost-explorer-mcp-server",
-          "command": cost_explorer_command,
-          "stdio_command": cost_explorer_stdio_command,
-          **({"transport": cost_explorer_transport} if cost_explorer_transport else {})
-        },
-        {
-          "name": "aws-ccapi-mcp-server",
-          "command": ccapi_command,
-          "stdio_command": ccapi_stdio_command,
-          **({"transport": ccapi_transport} if ccapi_transport else {})
-        }
-      ]
+      "mcp_connections": mcp_connections
     }
   )
 
@@ -276,6 +404,29 @@ async def on_chat_start():
     logger.info("User not logged in. Showing login page...")
     await cl.Message(content="Please login to continue.").send()
     return
+
+  # Refresh MCP connections in case configuration changed (e.g. new servers added)
+  # This ensures that even if the user session is restored from Redis, we use the latest config.
+  # We need the raw user dict for _build_mcp_connections, but cl.User object doesn't expose it directly
+  # in the same format as auth.authenticate returns. However, we can reconstruct what we need.
+  # The _build_mcp_connections function needs 'aws_role_arn'.
+  # We assume 'aws_role_arn' might be in metadata or we need to fetch it.
+  # Actually, let's check if we can get it from the user object.
+  # The user object in session is cl.User.
+  # Let's try to get aws_role_arn from metadata if available, or re-authenticate if possible (but we don't have password).
+  # A safer bet is to rely on the fact that we just need the ARN.
+  # Let's assume it's in metadata.
+  # If not, we might be stuck. But auth_callback puts it in... wait, auth_callback does NOT put role_arn in metadata.
+  # It uses it to build commands.
+  # We need to fetch the user details again from the session store using the identifier.
+  
+  full_user_details = store.get_user(user.identifier)
+  if full_user_details:
+      new_connections = _build_mcp_connections(full_user_details)
+      user.metadata["mcp_connections"] = new_connections
+      cl.user_session.set("user", user)
+      logger.info(f"Refreshed MCP connections for user {user.identifier}")
+
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
 
@@ -312,6 +463,15 @@ async def on_chat_resume(thread: ThreadDict):
       memory.append({"role": "assistant", "content": message["output"]})
 
   # Updating client with the old messages
+  
+  # Refresh MCP connections for resumed sessions as well
+  full_user_details = store.get_user(user.identifier)
+  if full_user_details:
+      new_connections = _build_mcp_connections(full_user_details)
+      user.metadata["mcp_connections"] = new_connections
+      cl.user_session.set("user", user)
+      logger.info(f"Refreshed MCP connections for user {user.identifier} (resume)")
+
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
   use_langgraph = ENABLE_LANGGRAPH
@@ -322,6 +482,7 @@ async def on_chat_resume(thread: ThreadDict):
     # Note: We might need to re-fetch tools if they are not in session
     # But for resume, we assume session is active or we re-fetch
     try:
+       # Force re-fetch with new metadata
        await fetch_registered_mcp_tools_for_user(user)
        tools = await get_configured_mcp_tools(user)
        client = LangGraphClient(tools=tools)
