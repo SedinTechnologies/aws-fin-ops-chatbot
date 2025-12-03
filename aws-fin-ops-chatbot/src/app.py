@@ -559,8 +559,8 @@ async def new_message(message: cl.Message):
       tools = await get_configured_mcp_tools(cl.user_session.get("user"))
       logger.info(f"[STREAM_DEBUG] Loaded {len(tools)} MCP tools for LangGraph")
 
-      # Initialize client with tools
-      lg_client = LangGraphClient(tools=tools)
+      # Reuse existing client to persist memory
+      lg_client = client
 
       response_message = cl.Message(content="")
       buffered_chunks: List[str] = []
@@ -571,7 +571,7 @@ async def new_message(message: cl.Message):
       chunk_count = 0
       async for chunk in lg_client.stream_response(
         message=message.content,
-        session_id=cl.user_session.get("id"),
+        session_id=cl.context.session.id,
         user_id=cl.user_session.get("user").identifier,
         guardrails=cl.user_session.get("guardrails")
       ):

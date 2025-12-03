@@ -13,6 +13,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import MemorySaver
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -65,7 +66,8 @@ class LangGraphClient:
         self.tools = tools
         self._llm = self._init_llm()
         self._graph = self._build_graph()
-        self._app = self._graph.compile()
+        self.checkpointer = MemorySaver()
+        self._app = self._graph.compile(checkpointer=self.checkpointer)
 
     def _init_llm(self) -> AzureChatOpenAI:
         llm_kwargs = {
@@ -83,7 +85,10 @@ class LangGraphClient:
         llm_with_tools = self._llm.bind_tools(self.tools)
 
         def llm_node(state: MessagesState):
-            return {"messages": [llm_with_tools.invoke(state["messages"])]}
+            # Prepend the System Prompt to ensure the LLM always has instructions
+            # We do this here instead of adding it to the state to avoid duplication in memory
+            messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+            return {"messages": [llm_with_tools.invoke(messages)]}
 
         def guard_node(state: MessagesState):
             # Placeholder for guardrails if needed, or simple pass-through
@@ -131,14 +136,15 @@ class LangGraphClient:
         """Streams the response from the graph."""
         
         # Prepare initial state
+        # We only pass the NEW message. The graph loads history from the checkpointer.
         inputs = {
             "messages": [
-                SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=message)
             ]
         }
 
-        config = {"configurable": {"session_id": session_id, "user_id": user_id}}
+        # Use session_id as thread_id for memory
+        config = {"configurable": {"thread_id": session_id, "user_id": user_id}}
 
         # Run guardrails on input if provided
         if guardrails:
@@ -156,7 +162,7 @@ class LangGraphClient:
         logger.info(f"[LANGGRAPH_DEBUG] Starting astream with inputs: {inputs}")
         last_content = ""
         async for event in self._app.astream(inputs, config=config, stream_mode="values"):
-            logger.info(f"[LANGGRAPH_DEBUG] Received event: {event.keys()}")
+            logger.info(f"[LANGGRAPH_DEBUG] Received event: {list(event.keys())}")
             if "messages" in event:
                 messages = event["messages"]
                 if not messages:
