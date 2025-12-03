@@ -135,14 +135,36 @@ The application uses several environment variables for configuration. These are 
 | `AWS_COST_EXPLORER_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Cost Explorer MCP Server |
 | `AWS_COST_EXPLORER_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Cost Explorer MCP Server |
 | `AWS_COST_EXPLORER_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Cost Explorer MCP Server |
-| `AWS_COST_EXPLORER_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8001/mcp` | URL for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_PORT` | `mcp-servers.env` | `8001` | Port for Cost Explorer MCP Server |
 | `AWS_COST_EXPLORER_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Cost Explorer MCP |
-| `AWS_CCAPI_MCP_PORT` | `mcp-servers.env` | `8082` | Port for CCAPI MCP Server |
 | `AWS_CCAPI_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CCAPI MCP Server |
 | `AWS_CCAPI_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CCAPI MCP Server |
 | `AWS_CCAPI_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CCAPI MCP Server |
-| `AWS_CCAPI_MCP_URL` | `mcp-servers.env` | `http://127.0.0.1:8002/mcp` | URL for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_PORT` | `mcp-servers.env` | `8002` | Port for CCAPI MCP Server |
 | `AWS_CCAPI_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for CCAPI MCP Server |
+| `AWS_CLOUDWATCH_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_PORT` | `mcp-servers.env` | `8003` | Port for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for CloudWatch MCP Server |
+| `AWS_BILLING_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Billing MCP Server |
+| `AWS_BILLING_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Billing MCP Server |
+| `AWS_BILLING_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Billing MCP Server |
+| `AWS_BILLING_MCP_PORT` | `mcp-servers.env` | `8004` | Port for Billing MCP Server |
+| `AWS_BILLING_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Billing MCP Server |
+| `AWS_CLOUDTRAIL_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_PORT` | `mcp-servers.env` | `8005` | Port for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for CloudTrail MCP Server |
+| `AWS_PRICING_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Pricing MCP Server |
+| `AWS_PRICING_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Pricing MCP Server |
+| `AWS_PRICING_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Pricing MCP Server |
+| `AWS_PRICING_MCP_PORT` | `mcp-servers.env` | `8006` | Port for Pricing MCP Server |
+| `AWS_PRICING_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Pricing MCP Server |
+| `AWS_REGION` | `mcp-servers.env` | `us-east-1` | AWS Region for MCPs |
+| `AWS_DEFAULT_REGION` | `mcp-servers.env` | `us-east-1` | Default AWS Region for MCPs |
+| `ENFORCE_LOCAL_MCP` | `mcp-servers.env` | `true` | Enforce local MCP execution |
 
 ---
 

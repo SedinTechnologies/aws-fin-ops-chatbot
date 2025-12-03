@@ -80,4 +80,16 @@ The behavior and look-and-feel of the bot are controlled by the `SYSTEM_PROMPT`.
       }
     ]
     ```
+    ```
 *   **Rendering**: `src/app.py` parses this JSON block, strips it from the visible text, and renders it as interactive **Chainlit Actions** (buttons) below the message.
+
+## 4. Integrated Tools
+
+The agent is equipped with a comprehensive suite of AWS tools provided by multiple MCP servers. These tools allow the agent to:
+*   Analyze costs (Cost Explorer, Billing)
+*   Monitor resources (CloudWatch)
+*   Audit activity (CloudTrail)
+*   Check pricing (Pricing)
+*   Manage resources (Cloud Control API)
+
+For a detailed list of available tools and servers, see [Available MCP Tools](available_mcp_tools.md).
