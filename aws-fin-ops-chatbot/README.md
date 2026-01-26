@@ -96,7 +96,6 @@ The application uses several environment variables for configuration. These are 
 | **AWS Credentials** | | | |
 | `AWS_ACCESS_KEY_ID` | `aws.env` | - | **Secret**: AWS Access Key ID |
 | `AWS_SECRET_ACCESS_KEY` | `aws.env` | - | **Secret**: AWS Secret Access Key |
-| `AWS_DEFAULT_REGION` | `aws.env` | `us-east-1` | Default AWS Region |
 | `AWS_REGION` | `aws.env` | `us-east-1` | AWS Region for App |
 | **Chainlit Config** | | | |
 | `CHAINLIT_HOST` | `chainlit.env` | `0.0.0.0` | Host for Chainlit server |
@@ -162,8 +161,7 @@ The application uses several environment variables for configuration. These are 
 | `AWS_PRICING_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Pricing MCP Server |
 | `AWS_PRICING_MCP_PORT` | `mcp-servers.env` | `8006` | Port for Pricing MCP Server |
 | `AWS_PRICING_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Pricing MCP Server |
-| `AWS_REGION` | `mcp-servers.env` | `us-east-1` | AWS Region for MCPs |
-| `AWS_DEFAULT_REGION` | `mcp-servers.env` | `us-east-1` | Default AWS Region for MCPs |
+| `AWS_REGION` | `mcp-servers.env` | `us-east-1` | AWS Region for MCPs | not needed here if passed in aws.env
 | `ENFORCE_LOCAL_MCP` | `mcp-servers.env` | `true` | Enforce local MCP execution |
 
 ---
@@ -201,6 +199,15 @@ docker compose up postgres data-migration --build
 
 ```bash
 docker compose up --build
+```
+
+### Customizing MCP Versions (Optional)
+
+You can override the default MCP server versions at build time using build arguments:
+
+```bash
+docker compose build --build-arg AWS_COST_EXPLORER_MCP_SERVER_VERSION=0.2.0
+docker compose up
 ```
 
 Visit: **[http://localhost:8000](http://localhost:8000)**

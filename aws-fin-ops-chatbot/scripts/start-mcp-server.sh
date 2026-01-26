@@ -51,7 +51,6 @@ export AWS_API_MCP_ALLOWED_ORIGINS
 if [ "$AWS_API_MCP_TRANSPORT" = "streamable-http" ] && [ -n "$MCP_ASGI_APP" ]; then
   echo "Starting MCP server with uvicorn for streamable-http..." >&2
   echo "DEBUG: AWS_REGION=${AWS_REGION}" >&2
-  echo "DEBUG: AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}" >&2
   # Extract package name from args (assumes format package@version or package[extra]@version)
   PACKAGE_ARG="$1"
   shift
@@ -74,7 +73,6 @@ if [ "$AWS_API_MCP_TRANSPORT" = "streamable-http" ] && [ -n "$MCP_ASGI_APP" ]; t
     AWS_API_MCP_ALLOWED_HOSTS="${AWS_API_MCP_ALLOWED_HOSTS}" \
     AWS_API_MCP_ALLOWED_ORIGINS="${AWS_API_MCP_ALLOWED_ORIGINS}" \
     AWS_REGION="${AWS_REGION:-us-east-1}" \
-    AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}" \
     uvx --verbose --with "$WITH_ARG" uvicorn "$MCP_ASGI_APP" --host "$AWS_API_MCP_BIND_HOST" --port "$AWS_API_MCP_PORT"
 else
   echo "Starting MCP server with standard entry point..." >&2
@@ -89,6 +87,5 @@ else
     AWS_API_MCP_ALLOWED_HOSTS="${AWS_API_MCP_ALLOWED_HOSTS}" \
     AWS_API_MCP_ALLOWED_ORIGINS="${AWS_API_MCP_ALLOWED_ORIGINS}" \
     AWS_REGION="${AWS_REGION:-us-east-1}" \
-    AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}" \
     uvx --verbose "$@"
 fi
