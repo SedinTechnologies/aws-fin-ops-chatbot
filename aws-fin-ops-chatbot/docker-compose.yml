@@ -54,12 +54,16 @@ services:
     env_file:
       - azure-openai.env
       - chainlit.env
-      - guardrails.env
+      - langgraph.env
       - mcp-servers.env
+      - guardrails.env
     volumes:
       - ./chainlit-config.toml:/app/.chainlit/config.toml
       # Need to mount aws env file to give access to MCP servers
       - ./aws.env:/app/aws.env
+      # Development purposes
+      - ./src:/app/src
+      - ./scripts:/app/scripts
 
 volumes:
   redis-data:

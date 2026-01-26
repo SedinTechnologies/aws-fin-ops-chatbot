@@ -47,15 +47,45 @@ export AWS_API_MCP_URL
 export AWS_API_MCP_ALLOWED_HOSTS
 export AWS_API_MCP_ALLOWED_ORIGINS
 
-# MOST IMPORTANT FIX → prepend uvx
-exec env \
-  AWS_API_MCP_TRANSPORT="${AWS_API_MCP_TRANSPORT}" \
-  AUTH_TYPE="${AUTH_TYPE}" \
-  AWS_API_MCP_HOST="${AWS_API_MCP_HOST}" \
-  AWS_API_MCP_BIND_HOST="${AWS_API_MCP_BIND_HOST}" \
-  AWS_API_MCP_CLIENT_HOST="${AWS_API_MCP_CLIENT_HOST}" \
-  AWS_API_MCP_PORT="${AWS_API_MCP_PORT}" \
-  AWS_API_MCP_URL="${AWS_API_MCP_URL}" \
-  AWS_API_MCP_ALLOWED_HOSTS="${AWS_API_MCP_ALLOWED_HOSTS}" \
-  AWS_API_MCP_ALLOWED_ORIGINS="${AWS_API_MCP_ALLOWED_ORIGINS}" \
-  uvx "$@"
+# Check if we should run with uvicorn for streamable-http
+if [ "$AWS_API_MCP_TRANSPORT" = "streamable-http" ] && [ -n "$MCP_ASGI_APP" ]; then
+  echo "Starting MCP server with uvicorn for streamable-http..." >&2
+  echo "DEBUG: AWS_REGION=${AWS_REGION}" >&2
+  # Extract package name from args (assumes format package@version or package[extra]@version)
+  PACKAGE_ARG="$1"
+  shift
+  
+  # Convert package@version to PEP 508 requirement for --with
+  # 1. Remove @latest (implies latest version, so no constraint needed)
+  # 2. Replace remaining @ with == (for specific versions)
+  WITH_ARG="${PACKAGE_ARG//@latest/}"
+  WITH_ARG="${WITH_ARG//@/==}"
+  
+  # We need to run uvicorn in the context of the package dependencies
+  exec env \
+    AWS_API_MCP_TRANSPORT="${AWS_API_MCP_TRANSPORT}" \
+    AUTH_TYPE="${AUTH_TYPE}" \
+    AWS_API_MCP_HOST="${AWS_API_MCP_HOST}" \
+    AWS_API_MCP_BIND_HOST="${AWS_API_MCP_BIND_HOST}" \
+    AWS_API_MCP_CLIENT_HOST="${AWS_API_MCP_CLIENT_HOST}" \
+    AWS_API_MCP_PORT="${AWS_API_MCP_PORT}" \
+    AWS_API_MCP_URL="${AWS_API_MCP_URL}" \
+    AWS_API_MCP_ALLOWED_HOSTS="${AWS_API_MCP_ALLOWED_HOSTS}" \
+    AWS_API_MCP_ALLOWED_ORIGINS="${AWS_API_MCP_ALLOWED_ORIGINS}" \
+    AWS_REGION="${AWS_REGION:-us-east-1}" \
+    uvx --verbose --with "$WITH_ARG" uvicorn "$MCP_ASGI_APP" --host "$AWS_API_MCP_BIND_HOST" --port "$AWS_API_MCP_PORT"
+else
+  echo "Starting MCP server with standard entry point..." >&2
+  exec env \
+    AWS_API_MCP_TRANSPORT="${AWS_API_MCP_TRANSPORT}" \
+    AUTH_TYPE="${AUTH_TYPE}" \
+    AWS_API_MCP_HOST="${AWS_API_MCP_HOST}" \
+    AWS_API_MCP_BIND_HOST="${AWS_API_MCP_BIND_HOST}" \
+    AWS_API_MCP_CLIENT_HOST="${AWS_API_MCP_CLIENT_HOST}" \
+    AWS_API_MCP_PORT="${AWS_API_MCP_PORT}" \
+    AWS_API_MCP_URL="${AWS_API_MCP_URL}" \
+    AWS_API_MCP_ALLOWED_HOSTS="${AWS_API_MCP_ALLOWED_HOSTS}" \
+    AWS_API_MCP_ALLOWED_ORIGINS="${AWS_API_MCP_ALLOWED_ORIGINS}" \
+    AWS_REGION="${AWS_REGION:-us-east-1}" \
+    uvx --verbose "$@"
+fi

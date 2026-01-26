@@ -1,4 +1,4 @@
-import os, redis, logging, random, traceback, json, shlex
+import os, redis, logging, random, traceback, json, shlex, re #kiss
 from typing import List, Dict, Any
 
 import chainlit as cl
@@ -9,10 +9,11 @@ from datetime import datetime as _datetime
 
 from mcp_tool_helper import (
   fetch_registered_mcp_tools_for_user,
-  deregister_mcp_tools_for_user
+  deregister_mcp_tools_for_user,
+  get_configured_mcp_tools
 )
 from azure_openai_client import AzureOpenAIClient
-from langgraph_app import LangGraphClient, GraphNotAvailableError
+from langgraph_app import LangGraphClient
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
 from guardrails import GuardrailEngine, GuardrailViolation
@@ -46,6 +47,10 @@ auth = AuthManager(store)
 
 CCAPI_MCP_SERVER_VERSION = os.getenv("CCAPI_MCP_SERVER_VERSION", "latest")
 AWS_COST_EXPLORER_MCP_SERVER_VERSION = os.getenv("AWS_COST_EXPLORER_MCP_SERVER_VERSION", "latest")
+AWS_CLOUDWATCH_MCP_SERVER_VERSION = os.getenv("AWS_CLOUDWATCH_MCP_SERVER_VERSION", "latest")
+AWS_BILLING_MCP_SERVER_VERSION = os.getenv("AWS_BILLING_MCP_SERVER_VERSION", "latest")
+AWS_CLOUDTRAIL_MCP_SERVER_VERSION = os.getenv("AWS_CLOUDTRAIL_MCP_SERVER_VERSION", "latest")
+AWS_PRICING_MCP_SERVER_VERSION = os.getenv("AWS_PRICING_MCP_SERVER_VERSION", "latest")
 ENABLE_LANGGRAPH = os.getenv("ENABLE_LANGGRAPH", "false").lower() == "true"
 ENFORCE_LOCAL_MCP = os.getenv("ENFORCE_LOCAL_MCP", "true").lower() == "true"
 
@@ -125,6 +130,7 @@ def _build_mcp_command(
   enforce_local = "true" if ENFORCE_LOCAL_MCP else "false"
   parts = [
     f"AWS_API_MCP_TRANSPORT={transport}",
+    f"AUTH_TYPE={config['auth']}",
     f"AWS_API_MCP_HOST={config['host']}",
     f"AWS_API_MCP_PORT={config['port']}",
     f"ENFORCE_LOCAL_MCP={enforce_local}"
@@ -141,10 +147,20 @@ def _build_mcp_command(
     parts.append(f"AWS_API_MCP_ALLOWED_HOSTS={config['allowed_hosts']}")
   if config.get("allowed_origins"):
     parts.append(f"AWS_API_MCP_ALLOWED_ORIGINS={config['allowed_origins']}")
+
+  asgi_app = config.get("asgi_app")
+  if asgi_app:
+    parts.append(f"MCP_ASGI_APP={asgi_app}")
+    logger.info(f"MCP command includes ASGI app: {asgi_app}")
+  else:
+    logger.warning(f"MCP command missing ASGI app for config: {config}")
+
   parts.append(
     f"/app/scripts/start-mcp-server.sh {quoted_role_arn} {package_arg}"
   )
-  return " ".join(parts)
+  command = " ".join(parts)
+  logger.info(f"Generated MCP command: {command}")
+  return command
 
 cost_explorer_mcp = _build_mcp_config(
   "AWS_COST_EXPLORER_MCP",
@@ -153,6 +169,9 @@ cost_explorer_mcp = _build_mcp_config(
   default_transport="streamable-http",
   default_client_host="127.0.0.1"
 )
+# Add ASGI app path for Cost Explorer (uses 'app' instance)
+cost_explorer_mcp["asgi_app"] = "awslabs.cost_explorer_mcp_server.server:app.streamable_http_app"
+
 ccapi_mcp = _build_mcp_config(
   "AWS_CCAPI_MCP",
   default_host="0.0.0.0",
@@ -160,6 +179,47 @@ ccapi_mcp = _build_mcp_config(
   default_transport="streamable-http",
   default_client_host="127.0.0.1"
 )
+# Add ASGI app path for Cloud Control (uses 'mcp' instance)
+ccapi_mcp["asgi_app"] = "awslabs.ccapi_mcp_server.server:mcp.streamable_http_app"
+
+cloudwatch_mcp = _build_mcp_config(
+  "AWS_CLOUDWATCH_MCP",
+  default_host="0.0.0.0",
+  default_port="8003",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+# Add ASGI app path for CloudWatch (uses 'mcp' instance)
+cloudwatch_mcp["asgi_app"] = "awslabs.cloudwatch_mcp_server.server:mcp.streamable_http_app"
+
+billing_mcp = _build_mcp_config(
+  "AWS_BILLING_MCP",
+  default_host="0.0.0.0",
+  default_port="8004",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+billing_mcp["asgi_app"] = "awslabs.billing_cost_management_mcp_server.server:mcp.streamable_http_app"
+
+cloudtrail_mcp = _build_mcp_config(
+  "AWS_CLOUDTRAIL_MCP",
+  default_host="0.0.0.0",
+  default_port="8005",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+cloudtrail_mcp["asgi_app"] = "awslabs.cloudtrail_mcp_server.server:mcp.streamable_http_app"
+
+pricing_mcp = _build_mcp_config(
+  "AWS_PRICING_MCP",
+  default_host="0.0.0.0",
+  default_port="8006",
+  default_transport="streamable-http",
+  default_client_host="127.0.0.1"
+)
+pricing_mcp["asgi_app"] = "awslabs.aws_pricing_mcp_server.server:mcp.streamable_http_app"
+
+
 
 
 def _streamable_transport_metadata(config: Dict[str, str]):
@@ -190,13 +250,14 @@ async def set_starters():
   random_seed_questions = random.sample(seed_questions, 3)
   return [cl.Starter(label=q, message=q) for q in random_seed_questions]
 
-@cl.password_auth_callback
-async def auth_callback(username: str, password: str):
-  user = auth.authenticate(username, password)
-  if not user:
-    return None
+def _build_mcp_connections(user: Dict[str, Any]) -> List[Dict[str, Any]]:
   cost_explorer_transport = _streamable_transport_metadata(cost_explorer_mcp)
   ccapi_transport = _streamable_transport_metadata(ccapi_mcp)
+  cloudwatch_transport = _streamable_transport_metadata(cloudwatch_mcp)
+  billing_transport = _streamable_transport_metadata(billing_mcp)
+  cloudtrail_transport = _streamable_transport_metadata(cloudtrail_mcp)
+  pricing_transport = _streamable_transport_metadata(pricing_mcp)
+
   cost_explorer_command = _build_mcp_command(
     config=cost_explorer_mcp,
     role_arn=user["aws_role_arn"],
@@ -209,6 +270,31 @@ async def auth_callback(username: str, password: str):
     server_version=CCAPI_MCP_SERVER_VERSION,
     package_name="awslabs.ccapi-mcp-server"
   )
+  cloudwatch_command = _build_mcp_command(
+    config=cloudwatch_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDWATCH_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudwatch-mcp-server"
+  )
+  billing_command = _build_mcp_command(
+    config=billing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_BILLING_MCP_SERVER_VERSION,
+    package_name="awslabs.billing-cost-management-mcp-server"
+  )
+  cloudtrail_command = _build_mcp_command(
+    config=cloudtrail_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDTRAIL_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudtrail-mcp-server"
+  )
+  pricing_command = _build_mcp_command(
+    config=pricing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_PRICING_MCP_SERVER_VERSION,
+    package_name="awslabs.aws-pricing-mcp-server"
+  )
+
   cost_explorer_stdio_command = _build_mcp_command(
     config=cost_explorer_mcp,
     role_arn=user["aws_role_arn"],
@@ -223,24 +309,91 @@ async def auth_callback(username: str, password: str):
     package_name="awslabs.ccapi-mcp-server",
     transport_override="stdio"
   )
+  cloudwatch_stdio_command = _build_mcp_command(
+    config=cloudwatch_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDWATCH_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudwatch-mcp-server",
+    transport_override="stdio"
+  )
+  billing_stdio_command = _build_mcp_command(
+    config=billing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_BILLING_MCP_SERVER_VERSION,
+    package_name="awslabs.billing-cost-management-mcp-server",
+    transport_override="stdio"
+  )
+  cloudtrail_stdio_command = _build_mcp_command(
+    config=cloudtrail_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_CLOUDTRAIL_MCP_SERVER_VERSION,
+    package_name="awslabs.cloudtrail-mcp-server",
+    transport_override="stdio"
+  )
+  pricing_stdio_command = _build_mcp_command(
+    config=pricing_mcp,
+    role_arn=user["aws_role_arn"],
+    server_version=AWS_PRICING_MCP_SERVER_VERSION,
+    package_name="awslabs.aws-pricing-mcp-server",
+    transport_override="stdio"
+  )
+
+  connections = [
+    {
+      "name": "aws-cost-explorer-mcp-server",
+      "command": cost_explorer_command,
+      "stdio_command": cost_explorer_stdio_command,
+      **({"transport": cost_explorer_transport} if cost_explorer_transport else {})
+    },
+    {
+      "name": "aws-ccapi-mcp-server",
+      "command": ccapi_command,
+      "stdio_command": ccapi_stdio_command,
+      **({"transport": ccapi_transport} if ccapi_transport else {})
+    },
+    {
+      "name": "aws-cloudwatch-mcp-server",
+      "command": cloudwatch_command,
+      "stdio_command": cloudwatch_stdio_command,
+      **({"transport": cloudwatch_transport} if cloudwatch_transport else {})
+    },
+    {
+      "name": "aws-billing-mcp-server",
+      "command": billing_command,
+      "stdio_command": billing_stdio_command,
+      **({"transport": billing_transport} if billing_transport else {})
+    },
+    {
+      "name": "aws-cloudtrail-mcp-server",
+      "command": cloudtrail_command,
+      "stdio_command": cloudtrail_stdio_command,
+      **({"transport": cloudtrail_transport} if cloudtrail_transport else {})
+    },
+    {
+      "name": "aws-pricing-mcp-server",
+      "command": pricing_command,
+      "stdio_command": pricing_stdio_command,
+      **({"transport": pricing_transport} if pricing_transport else {})
+    }
+  ]
+  
+  return connections
+
+@cl.password_auth_callback
+async def auth_callback(username: str, password: str):
+  print(f"[AUTH_DEBUG] auth_callback called for username: {username}")
+  user = auth.authenticate(username, password)
+  if not user:
+    print("[AUTH_DEBUG] Authentication failed")
+    return None
+
+  mcp_connections = _build_mcp_connections(user)
+
   return cl.User(
     identifier=user["identifier"],
     display_name=user["name"],
     metadata={
-      "mcp_connections": [
-        {
-          "name": "aws-cost-explorer-mcp-server",
-          "command": cost_explorer_command,
-          "stdio_command": cost_explorer_stdio_command,
-          **({"transport": cost_explorer_transport} if cost_explorer_transport else {})
-        },
-        {
-          "name": "aws-ccapi-mcp-server",
-          "command": ccapi_command,
-          "stdio_command": ccapi_stdio_command,
-          **({"transport": ccapi_transport} if ccapi_transport else {})
-        }
-      ]
+      "mcp_connections": mcp_connections
     }
   )
 
@@ -251,22 +404,33 @@ async def on_chat_start():
     logger.info("User not logged in. Showing login page...")
     await cl.Message(content="Please login to continue.").send()
     return
+  
+  full_user_details = store.get_user(user.identifier)
+  if full_user_details:
+      new_connections = _build_mcp_connections(full_user_details)
+      user.metadata["mcp_connections"] = new_connections
+      cl.user_session.set("user", user)
+      logger.info(f"Refreshed MCP connections for user {user.identifier}")
+
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
+
   use_langgraph = ENABLE_LANGGRAPH
   client = None
   if use_langgraph:
-    try:
-      client = LangGraphClient(guardrails=guardrails)
-    except GraphNotAvailableError:
-      logger.warning("LangGraph dependencies missing; falling back to AzureOpenAIClient")
-      use_langgraph = False
+    # Get the tool objects for LangGraph
+    from mcp_tool_helper import get_configured_mcp_tools
+    tools = await get_configured_mcp_tools(user)
+    client = LangGraphClient(tools=tools)
+
   if not use_langgraph:
     client = AzureOpenAIClient(guardrails=guardrails)
+
   cl.user_session.set("langgraph_enabled", use_langgraph)
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
   cl.user_session.set("memory", [])
+
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
 
 @cl.on_chat_resume
@@ -284,22 +448,36 @@ async def on_chat_resume(thread: ThreadDict):
       memory.append({"role": "assistant", "content": message["output"]})
 
   # Updating client with the old messages
+  
+  # Refresh MCP connections for resumed sessions as well
+  full_user_details = store.get_user(user.identifier)
+  if full_user_details:
+      new_connections = _build_mcp_connections(full_user_details)
+      user.metadata["mcp_connections"] = new_connections
+      cl.user_session.set("user", user)
+      logger.info(f"Refreshed MCP connections for user {user.identifier} (resume)")
+
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
   use_langgraph = ENABLE_LANGGRAPH
   client = None
   if use_langgraph:
+    # Get the tool objects for LangGraph
+    from mcp_tool_helper import get_configured_mcp_tools
+    # Note: We might need to re-fetch tools if they are not in session
+    # But for resume, we assume session is active or we re-fetch
     try:
-      client = LangGraphClient(guardrails=guardrails)
-    except GraphNotAvailableError:
-      logger.warning("LangGraph dependencies missing; falling back to AzureOpenAIClient")
-      use_langgraph = False
+       # Force re-fetch with new metadata
+       await fetch_registered_mcp_tools_for_user(user)
+       tools = await get_configured_mcp_tools(user)
+       client = LangGraphClient(tools=tools)
+    except Exception:
+       logger.warning("Failed to initialize LangGraph client on resume; falling back")
+       use_langgraph = False
+
   if not use_langgraph:
     client = AzureOpenAIClient(guardrails=guardrails)
     client.messages.extend(memory)
-  else:
-    base_history = client.history[:1]
-    client.history = base_history + memory
   cl.user_session.set("langgraph_enabled", use_langgraph)
   cl.user_session.set("client", client)
   cl.user_session.set("mcp_tools", {})
@@ -311,7 +489,8 @@ async def on_chat_resume(thread: ThreadDict):
 async def on_chat_end():
   user = cl.user_session.get("user")
   if user:
-    await deregister_mcp_tools_for_user(user)
+    # Do not deregister MCP tools on chat end to allow reuse across sessions/chats
+    # await deregister_mcp_tools_for_user(user)
     cl.user_session.set("mcp_tools", {})
     logger.info(f"User {user.display_name} session ended with ID: {cl.context.session.id}")
 
@@ -331,6 +510,7 @@ async def on_mcp_connect(connection, session: ClientSession):
 
 @cl.on_message
 async def new_message(message: cl.Message):
+  logger.info(f"[HANDLER_DEBUG] new_message called with: {message.content[:50]}")
   try:
     user = cl.user_session.get("user")
     if not user:
@@ -340,13 +520,16 @@ async def new_message(message: cl.Message):
     tools = await fetch_registered_mcp_tools_for_user(user)
 
     use_langgraph = bool(cl.user_session.get("langgraph_enabled", False))
+    logger.info(f"[HANDLER_DEBUG] use_langgraph={use_langgraph}, langgraph_enabled={cl.user_session.get('langgraph_enabled')}")
     client = cl.user_session.get("client")
+    logger.info(f"[HANDLER_DEBUG] client type: {type(client).__name__}")
     if client is None:
       await cl.Message(content="Session not initialized. Please refresh and try again.").send()
       return
     guardrails: GuardrailEngine = cl.user_session.get("guardrails")
 
     if not use_langgraph:
+      logger.info("[HANDLER_DEBUG] Using non-LangGraph path (AzureOpenAIClient)")
       guardrails.guard_input(
         session_id=cl.context.session.id,
         user_id=user.identifier,
@@ -354,58 +537,84 @@ async def new_message(message: cl.Message):
       )
 
     if use_langgraph:
-      lg_client: LangGraphClient = client
+      logger.info("[HANDLER_DEBUG] Using LangGraph path")
+      logger.info(f"[STREAM_DEBUG] Starting LangGraph stream for message: {message.content}")
+
+      # Get actual BaseTool objects for LangGraph
+      tools = await get_configured_mcp_tools(cl.user_session.get("user"))
+      logger.info(f"[STREAM_DEBUG] Loaded {len(tools)} MCP tools for LangGraph")
+
+      # Reuse existing client to persist memory
+      lg_client = client
+
       response_message = cl.Message(content="")
       buffered_chunks: List[str] = []
       next_questions: List[Dict[str, Any]] = []
 
+      logger.info(f"[STREAM_DEBUG] Starting LangGraph stream for message: {message.content[:50]}")
+      logger.info(f"[STREAM_DEBUG] Passing {len(tools)} tools to LangGraph: {[t.name for t in tools[:5]]}")
+      chunk_count = 0
       async for chunk in lg_client.stream_response(
-        message.content,
+        message=message.content,
         session_id=cl.context.session.id,
-        user_id=user.identifier,
-        tools=tools
+        user_id=cl.user_session.get("user").identifier,
+        guardrails=cl.user_session.get("guardrails")
       ):
-        try:
-          payload = json.loads(chunk)
-        except json.JSONDecodeError:
-          buffered_chunks.append(chunk)
-          if not response_message.id:
-            await response_message.send()
+        if isinstance(chunk, str):
           await response_message.stream_token(chunk)
-          continue
 
-        if payload.get("type") == "final":
-          next_questions = payload.get("next_questions", [])
-          final_content = payload.get("content", "")
+      await response_message.send()
 
-          guardrails.guard_model_response(
-            session_id=cl.context.session.id,
-            user_id=user.identifier,
-            content=final_content
-          )
+      # Post-processing for suggestions
+      content = response_message.content
+      
+      # Robust pattern to find the START of the suggestions block
+      # Matches 'json_suggestions' or '```json_suggestions' at the start of a line or after a newline
+      start_pattern = r"(?:(?:\n|^)json_suggestions|```json_suggestions)"
+      match = re.search(start_pattern, content)
 
-          if not response_message.id:
-            await response_message.send()
-
-          response_message.content = final_content or "".join(buffered_chunks)
-          msg_actions = [
-            cl.Action(
-              name="next_question_click",
-              icon=nq["icon"],
-              label=nq["question"],
-              payload={"question": nq["question"]}
-            ) for nq in next_questions
-          ] if next_questions else []
-          response_message.actions = msg_actions
+      if match:
+          # Extract the potential block from the match start to the end of the string
+          block = content[match.start():]
+          
+          # Try to extract JSON from the block
+          json_match = re.search(r"(\[\s*\{[\s\S]*)", block)
+          if json_match:
+              json_text = json_match.group(1)
+              # Remove potential closing backticks if present
+              json_text = re.sub(r"\s*```\s*$", "", json_text)
+              
+              try:
+                  suggestions = json.loads(json_text)
+                  actions = []
+                  for s in suggestions:
+                      label = s.get("label", s.get("question")[:20])
+                      description = s.get("description")
+                      if description:
+                          label = f"{label} - {description}"
+                      
+                      actions.append(
+                          cl.Action(
+                              name="next_question_click",
+                              icon=s.get("icon", "👉"),
+                              label=label,
+                              payload={"question": s.get("question")}
+                          )
+                      )
+                  response_message.actions = actions
+              except json.JSONDecodeError:
+                  # JSON is likely truncated or malformed. We log it but don't crash.
+                  pass
+          
+          # ALWAYS strip the matched block from the content to prevent raw text leakage
+          response_message.content = content[:match.start()].strip()
           await response_message.update()
-        else:
-          if not response_message.id:
-            await response_message.send()
-          await response_message.stream_token(chunk if isinstance(chunk, str) else str(chunk))
 
-      cl.user_session.set("memory", lg_client.history)
+      # Update memory if needed (LangGraph manages its own state usually, but for session consistency)
+      # cl.user_session.set("memory", lg_client.history)
       return
 
+    # Fallback to AzureOpenAIClient if LangGraph is not used
     az_client: AzureOpenAIClient = client
 
     az_client.messages.extend(cl.user_session.get("memory", [])) # Add existing messages if any
@@ -475,7 +684,7 @@ async def new_message(message: cl.Message):
     )
     await cl.Message("Your request was blocked by safety policies. Please adjust and try again.").send()
   except Exception:
-    logger.error(f"Error while processing: {traceback.print_exc()}")
+    logger.error(f"Error while processing: {traceback.format_exc()}")
     await cl.Message("An error occurred while processing! Please contact admin team!").send()
 
 @cl.action_callback("next_question_click")

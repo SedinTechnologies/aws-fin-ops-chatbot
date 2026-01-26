@@ -7,12 +7,6 @@ RUN apt-get update \
 # Install uv (lightweight universal package runner)
 RUN pip install --no-cache-dir uv
 
-# Install required MCP server packages
-ENV AWS_COST_EXPLORER_MCP_SERVER_VERSION=latest
-ENV CCAPI_MCP_SERVER_VERSION=latest
-RUN uvx awslabs.cost-explorer-mcp-server@$AWS_COST_EXPLORER_MCP_SERVER_VERSION \
-  && uvx awslabs.ccapi-mcp-server@$CCAPI_MCP_SERVER_VERSION
-
 WORKDIR /app
 
 # Setting up UV related paths
