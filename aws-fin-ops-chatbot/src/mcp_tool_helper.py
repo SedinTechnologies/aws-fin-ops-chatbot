@@ -3,7 +3,7 @@ import logging
 import os
 import traceback
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
 import chainlit as cl
@@ -217,6 +217,23 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
   connection: Connection | None = None
   last_exception: Exception | None = None
 
+  if name in MCP_CLIENT_CACHE:
+    cached_runtime, cached_entries = MCP_CLIENT_CACHE[name]
+    # Verify if the process (if any) is still alive
+    if cached_runtime.get("started_http_process"):
+      proc = MCP_SERVER_REGISTRY.get(name)
+      if proc and proc.returncode is None:
+        logger.info(f"Reusing cached MCP client and tools for '{name}'")
+        return cached_runtime, cached_entries
+      else:
+        logger.warning(f"Cached MCP process for '{name}' is dead or missing. Re-initializing.")
+        MCP_CLIENT_CACHE.pop(name, None)
+    else:
+        # For stdio or external http, assume it's still good for now
+        # (Stdio connection might be dead, but we can't easily check without trying)
+        logger.info(f"Reusing cached MCP client and tools for '{name}'")
+        return cached_runtime, cached_entries
+
   if normalized_transport == "streamable_http":
     try:
       started_process = await _ensure_streamable_http_process(
@@ -249,11 +266,18 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
   else:
     transport_mode = "streamable_http"
 
-  tools = await load_mcp_tools(
-    None,
-    connection=connection,
-    server_name=name
-  )
+  try:
+      tools = await load_mcp_tools(
+        None,
+        connection=connection,
+        server_name=name
+      )
+  except Exception as tool_load_exc:
+     logger.error(f"Failed to load MCP tools for {name}: {tool_load_exc}")
+     raise tool_load_exc
+
+  for tool in tools:
+    tool.handle_tool_error = True
 
   entries = [_build_tool_entry(tool, name) for tool in tools]
   logger.info(
@@ -269,6 +293,9 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
     "transport": transport_mode,
     "started_http_process": started_process
   }
+  
+  # Cache the result
+  MCP_CLIENT_CACHE[name] = (runtime, entries)
 
   return runtime, entries
 
@@ -365,6 +392,10 @@ def _build_stdio_connection(command: str) -> Connection:
 # Global registry to track MCP processes across sessions
 # Key: mcp_name, Value: asyncio.subprocess.Process
 MCP_SERVER_REGISTRY: Dict[str, asyncio.subprocess.Process] = {}
+
+# Global registry to track MCP clients/tools across sessions
+# Key: mcp_name, Value: (runtime, entries)
+MCP_CLIENT_CACHE: Dict[str, Tuple[Dict[str, Any], List[MCPToolEntry]]] = {}
 
 async def _ensure_streamable_http_process(
   mcp_name: str,

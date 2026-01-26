@@ -699,7 +699,7 @@ async def new_message(message: cl.Message):
     )
     await cl.Message("Your request was blocked by safety policies. Please adjust and try again.").send()
   except Exception:
-    logger.error(f"Error while processing: {traceback.print_exc()}")
+    logger.error(f"Error while processing: {traceback.format_exc()}")
     await cl.Message("An error occurred while processing! Please contact admin team!").send()
 
 @cl.action_callback("next_question_click")
