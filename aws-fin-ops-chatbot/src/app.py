@@ -404,21 +404,6 @@ async def on_chat_start():
     logger.info("User not logged in. Showing login page...")
     await cl.Message(content="Please login to continue.").send()
     return
-
-  # Refresh MCP connections in case configuration changed (e.g. new servers added)
-  # This ensures that even if the user session is restored from Redis, we use the latest config.
-  # We need the raw user dict for _build_mcp_connections, but cl.User object doesn't expose it directly
-  # in the same format as auth.authenticate returns. However, we can reconstruct what we need.
-  # The _build_mcp_connections function needs 'aws_role_arn'.
-  # We assume 'aws_role_arn' might be in metadata or we need to fetch it.
-  # Actually, let's check if we can get it from the user object.
-  # The user object in session is cl.User.
-  # Let's try to get aws_role_arn from metadata if available, or re-authenticate if possible (but we don't have password).
-  # A safer bet is to rely on the fact that we just need the ARN.
-  # Let's assume it's in metadata.
-  # If not, we might be stuck. But auth_callback puts it in... wait, auth_callback does NOT put role_arn in metadata.
-  # It uses it to build commands.
-  # We need to fetch the user details again from the session store using the identifier.
   
   full_user_details = store.get_user(user.identifier)
   if full_user_details:
