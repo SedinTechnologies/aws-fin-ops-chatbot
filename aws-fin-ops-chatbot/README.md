@@ -111,7 +111,7 @@ The application uses several environment variables for configuration. These are 
 | `BUCKET_NAME` | `chainlit.env` | `aws-fin-ops-bot-data` | S3 Bucket name |
 | `APP_AWS_ACCESS_KEY` | `chainlit.env` | `dummy-key` | AWS Access Key for App (Localstack) |
 | `APP_AWS_SECRET_KEY` | `chainlit.env` | `dummy-key` | AWS Secret Key for App (Localstack) |
-| `APP_AWS_REGION` | `chainlit.env` | `us-east-1` | AWS Region for App (Localstack) |
+
 | `DEV_AWS_ENDPOINT` | `chainlit.env` | `http://localstack:4566` | Localstack endpoint |
 | **Guardrails** | | | |
 | `GUARDRAILS_ENABLED` | `guardrails.env` | `true` | Master switch for guardrails |
@@ -161,7 +161,6 @@ The application uses several environment variables for configuration. These are 
 | `AWS_PRICING_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Pricing MCP Server |
 | `AWS_PRICING_MCP_PORT` | `mcp-servers.env` | `8006` | Port for Pricing MCP Server |
 | `AWS_PRICING_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Pricing MCP Server |
-| `AWS_REGION` | `mcp-servers.env` | `us-east-1` | AWS Region for MCPs | not needed here if passed in aws.env
 | `ENFORCE_LOCAL_MCP` | `mcp-servers.env` | `true` | Enforce local MCP execution |
 
 ---
