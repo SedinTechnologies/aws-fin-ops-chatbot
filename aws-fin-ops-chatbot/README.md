@@ -111,7 +111,6 @@ The application uses several environment variables for configuration. These are 
 | `BUCKET_NAME` | `chainlit.env` | `aws-fin-ops-bot-data` | S3 Bucket name |
 | `APP_AWS_ACCESS_KEY` | `chainlit.env` | `dummy-key` | AWS Access Key for App (Localstack) |
 | `APP_AWS_SECRET_KEY` | `chainlit.env` | `dummy-key` | AWS Secret Key for App (Localstack) |
-
 | `DEV_AWS_ENDPOINT` | `chainlit.env` | `http://localstack:4566` | Localstack endpoint |
 | **Guardrails** | | | |
 | `GUARDRAILS_ENABLED` | `guardrails.env` | `true` | Master switch for guardrails |
