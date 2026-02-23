@@ -1,0 +1,180 @@
+# AWS FinOps Bot - Detailed Documentation
+
+This document contains detailed information regarding the configuration, architecture, and troubleshooting of the AWS FinOps Bot.
+
+For a high-level overview and basic setup instructions, please see the [main README](../README.md).
+
+## Table of Contents
+- [Guardrails](#guardrails)
+- [Environment Variables](#environment-variables)
+- [Application Architecture](#application-architecture)
+- [Troubleshooting](#troubleshooting)
+- [Credits](#credits)
+
+---
+
+## Guardrails
+
+The bot enforces configurable guardrails to keep every session within allowed AWS-finops scope. Key capabilities:
+
+- **Account/Service allowlists:** restrict requests to specific AWS accounts or services.
+- **Time-window limits:** block queries that exceed maximum lookback or forecast windows.
+- **Tool rate limiting:** per-tool call limits to prevent excessive downstream usage.
+- **Content scanning:** lightweight keyword detection on user input, tool output, and model responses.
+- **Auditing:** structured JSON lines written to the path in `GUARDRAIL_AUDIT_LOG`.
+
+Set `TOOL_RATE_LIMIT_MODE` to control enforcement: `enforce` (block requests), `warn` (log but continue), or `off` (disable rate limiting). The sample `chainlit.env` defaults to `warn` so development sessions are not interrupted even when a tool is called repeatedly.
+
+---
+
+## Environment Variables
+
+The application uses several environment variables for configuration. These are split across multiple `.env` files in the `docker-compose.yml` setup. Please update as necessary in the respective `.env` files.
+
+| Variable | File | Default | Description |
+| :--- | :--- | :--- | :--- |
+| **Azure OpenAI** | | | |
+| `OPENAI_API_VERSION` | `azure-openai.env` | `2025-01-01-preview` | API version for Azure OpenAI |
+| `AZURE_OPENAI_MODEL` | `azure-openai.env` | `gpt-5` | Model deployment name |
+| `AZURE_OPENAI_ENDPOINT` | `azure-openai.env` | `https://opendevopsai.openai.azure.com` | Endpoint URL |
+| `AZURE_OPENAI_API_KEY` | `azure-openai.env` | - | **Secret**: API Key for Azure OpenAI |
+| `AZURE_OPENAI_API_KEY2` | `azure-openai.env` | - | **Secret**: Secondary API Key |
+| **AWS Credentials** | | | |
+| `AWS_ACCESS_KEY_ID` | `aws.env` | - | **Secret**: AWS Access Key ID |
+| `AWS_SECRET_ACCESS_KEY` | `aws.env` | - | **Secret**: AWS Secret Access Key |
+| `AWS_REGION` | `aws.env` | `us-east-1` | AWS Region for App |
+| **Chainlit Config** | | | |
+| `CHAINLIT_HOST` | `chainlit.env` | `0.0.0.0` | Host for Chainlit server |
+| `CHAINLIT_PORT` | `chainlit.env` | `8000` | Port for Chainlit server |
+| `CHAINLIT_LANGUAGE` | `chainlit.env` | `en-US` | UI Language |
+| `CHAINLIT_REQUIRE_LOGIN` | `chainlit.env` | `true` | Enforce login |
+| `CHAINLIT_AUTH_SECRET` | `chainlit.env` | - | **Secret**: Secret for session signing |
+| **Database & Cache** | | | |
+| `REDIS_HOST` | `chainlit.env` | `redis` | Redis hostname |
+| `REDIS_PORT` | `chainlit.env` | `6379` | Redis port |
+| `DATABASE_URL` | `chainlit.env` | - | **Secret**: PostgreSQL connection string |
+| **App Specific AWS** | | | |
+| `BUCKET_NAME` | `chainlit.env` | `aws-fin-ops-bot-data` | S3 Bucket name |
+| `APP_AWS_ACCESS_KEY` | `chainlit.env` | `dummy-key` | AWS Access Key for App (Localstack) |
+| `APP_AWS_SECRET_KEY` | `chainlit.env` | `dummy-key` | AWS Secret Key for App (Localstack) |
+| `DEV_AWS_ENDPOINT` | `chainlit.env` | `http://localstack:4566` | Localstack endpoint |
+| **Guardrails** | | | |
+| `GUARDRAILS_ENABLED` | `guardrails.env` | `true` | Master switch for guardrails |
+| `GUARDRAIL_AUDIT_LOG` | `guardrails.env` | `/tmp/guardrail_audit.log` | Path to audit log |
+| `ALLOWED_AWS_ACCOUNTS` | `guardrails.env` | - | Comma-separated allowed account IDs |
+| `ALLOWED_AWS_SERVICES` | `guardrails.env` | `CostExplorer,EC2,S3` | Comma-separated allowed services |
+| `MAX_LOOKBACK_DAYS` | `guardrails.env` | `365` | Max historical days for queries |
+| `MAX_FORECAST_DAYS` | `guardrails.env` | `90` | Max forecast days |
+| `TOOL_RATE_LIMIT_MODE` | `guardrails.env` | `warn` | Rate limit mode: `enforce`, `warn`, `off` |
+| `TOOL_RATE_LIMITS_JSON` | `guardrails.env` | `[]` | JSON for per-tool limits |
+| `BUDGET_POLICY_JSON` | `guardrails.env` | `{}` | JSON for budget policy |
+| **LangGraph Config** | | | |
+| `ENABLE_LANGGRAPH` | `langgraph.env` | `true` | Enable LangGraph |
+| `LANGGRAPH_MAX_TOOL_LOOPS` | `langgraph.env` | `60` | Max tool loops |
+| `LANGGRAPH_RECURSION_LIMIT` | `langgraph.env` | `40` | Recursion limit |
+| `STREAMABLE_HTTP_READY_TIMEOUT` | `langgraph.env` | `25` | Streamable HTTP ready timeout (seconds) |
+| `STREAMABLE_HTTP_READY_INITIAL_DELAY` | `langgraph.env` | `2` | Streamable HTTP ready initial delay (seconds) |
+| **MCP Servers** | | | |
+| `AWS_COST_EXPLORER_MCP_PORT` | `mcp-servers.env` | `8001` | Port for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Cost Explorer MCP Server |
+| `AWS_COST_EXPLORER_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Cost Explorer MCP |
+| `AWS_CCAPI_MCP_PORT` | `mcp-servers.env` | `8002` | Port for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CCAPI MCP Server |
+| `AWS_CCAPI_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for CCAPI MCP Server |
+| `AWS_CLOUDWATCH_MCP_PORT` | `mcp-servers.env` | `8003` | Port for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CloudWatch MCP Server |
+| `AWS_CLOUDWATCH_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for CloudWatch MCP Server |
+| `AWS_BILLING_MCP_PORT` | `mcp-servers.env` | `8004` | Port for Billing MCP Server |
+| `AWS_BILLING_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Billing MCP Server |
+| `AWS_BILLING_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Billing MCP Server |
+| `AWS_BILLING_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Billing MCP Server |
+| `AWS_BILLING_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Billing MCP Server |
+| `AWS_CLOUDTRAIL_MCP_PORT` | `mcp-servers.env` | `8005` | Port for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for CloudTrail MCP Server |
+| `AWS_CLOUDTRAIL_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for CloudTrail MCP Server |
+| `AWS_PRICING_MCP_PORT` | `mcp-servers.env` | `8006` | Port for Pricing MCP Server |
+| `AWS_PRICING_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Pricing MCP Server |
+| `AWS_PRICING_MCP_BIND_HOST` | `mcp-servers.env` | `127.0.0.1` | Bind Host for Pricing MCP Server |
+| `AWS_PRICING_MCP_CLIENT_HOST` | `mcp-servers.env` | `127.0.0.1` | Client Host for Pricing MCP Server |
+| `AWS_PRICING_MCP_TRANSPORT` | `mcp-servers.env` | `streamable-http` | Transport protocol for Pricing MCP Server |
+| `ENFORCE_LOCAL_MCP` | `mcp-servers.env` | `true` | Enforce local MCP execution |
+
+---
+
+## Application Architecture
+
+### High-Level Flow
+
+1. **User logs into the Chainlit UI** using the configured authentication provider (Redis for local development or an external identity provider in production).
+2. **User initiates a chat session** and submits a cost‑related or usage‑related query.
+3. **System Prompt applies strict domain rules**, ensuring only AWS billing and AWS resource‑usage queries are processed.
+4. **LangGraph Orchestration**:
+   * The request is processed by a `StateGraph` workflow.
+   * The LLM decides whether to call tools or generate a response.
+5. If tools are needed, the LLM invokes the required **MCP servers**. Examples include:
+   * `aws-cost-explorer-mcp-server` → Queries Cost Explorer
+   * `aws-ccapi-mcp-server` → Queries Cloud Control API
+6. MCP servers execute the underlying AWS requests and return structured results.
+7. The processed response is sent back to Chainlit, which **renders it in the UI**.
+8. **Local Development**:
+   * Localstack emulates AWS services, including S3 storage.
+   * Redis functions as the authentication provider.
+
+### Production Environment vs Local Development
+
+**Production Environment Recommendations**:
+* A real S3 bucket must be used instead of Localstack.
+* Real user authentication (SSO or your provider of choice) should be configured.
+* Redis can still be used as an auth store if preferred.
+
+---
+
+## Troubleshooting
+
+### Migration container keeps running
+
+* Ensure that the Chainlit version matches the datalayer migrations.
+* Inspect logs:
+```bash
+docker logs data-migration
+```
+
+### Chainlit UI not loading
+
+* Confirm containers are healthy:
+```bash
+docker compose ps
+```
+* Ensure port `8000` is not in use.
+
+### MCP servers failing
+
+* Check your AWS credentials.
+* Ensure the MCP env vars still point to `127.0.0.1` (servers run inside the Chainlit container). If you override them, the hostname must exist on the Docker network or you must set `ENFORCE_LOCAL_MCP=false` and supply matching DNS.
+* For Localstack, confirm that endpoints are correctly configured.
+* If a streamable MCP takes a while to boot (e.g., first launch after pulling images), bump `STREAMABLE_HTTP_READY_TIMEOUT` (default `30s`) and optionally `STREAMABLE_HTTP_READY_INITIAL_DELAY` (default `1s`) so the readiness probe waits long enough before falling back to stdio.
+* Local development without the HTTP transport? Set `AWS_COST_EXPLORER_MCP_TRANSPORT=AWS_CCAPI_MCP_TRANSPORT=stdio` in `chainlit.env` to skip streamable startup entirely and avoid long login delays.
+
+### Azure OpenAI errors
+
+* Verify API key + deployment name.
+* Ensure the model supports functions/tool calling.
+
+---
+
+## Credits
+
+* **Azure OpenAI** for LLM capabilities
+* **LangGraph** for agent orchestration
+* **Chainlit** for the UI framework
+* **MCP (Model Context Protocol)** for server integration
+* **AWS Cost Explorer & Cloud Control API**
+* **Localstack**, **PostgreSQL**, **Redis**, Docker ecosystem
