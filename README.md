@@ -29,8 +29,8 @@ Follow these steps to get a local development environment running quickly so you
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed.
-- Valid API Keys (Azure OpenAI) and appropriate AWS authentication credentials.
+* [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed.
+* Valid API Keys (Azure OpenAI) and appropriate AWS authentication credentials.
 
 ### 1. Clone the Repository
 
@@ -49,6 +49,7 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
 2. **Attach Policies** to the user/role to grant appropriate access:
    * **`ReadOnlyAccess`** (AWS Managed Policy): Required for the Cloud Control API, CloudWatch, Billing, CloudTrail, and Pricing MCP servers to read resource configurations and metrics.
    * **Cost Explorer Access**: Required for the Cost Explorer MCP server. You can attach the `AWSBillingReadOnlyAccess` managed policy or create an inline policy with the following permissions:
+
      ```json
      {
        "Version": "2012-10-17",
@@ -66,8 +67,10 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
        ]
      }
      ```
+
 3. **Generate an Access Key** for this IAM User (or obtain credentials for the Role).
 4. **Update Configuration**: Add the generated Access Key ID and Secret Access Key to the `aws.env` file in the root of the repository:
+
    ```env
    AWS_ACCESS_KEY_ID=your_access_key_here
    AWS_SECRET_ACCESS_KEY=your_secret_key_here
@@ -76,7 +79,8 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
 ### 3. Configure Other Environment Variables
 
 The application relies on several other environment files (`azure-openai.env`, `chainlit.env`, etc.). You must provide the correct keys/values before proceeding.
-* 👉 **[See the Complete Detailed list of Environment Variables inside docs/README.md](docs/README.md#environment-variables)**
+
+* 👉 **[See the Complete Detailed list of Environment Variables inside docs/EXTENDED_README.md](docs/EXTENDED_README.md#environment-variables)**
 
 ### 4. Prepare the Database Migrations
 
@@ -84,9 +88,11 @@ Set up your PostgreSQL database using the built-in Chainlit datalayer migrations
 
 1. Open `docker-compose.yml` and **uncomment** the `data-migration` service code.
 2. Build and run the migration containers:
+
    ```bash
    docker compose up postgres data-migration --build
    ```
+
 3. Wait for the migrations to complete successfully in your terminal logs.
 4. Stop the docker compose process (e.g., using `Ctrl+C`).
 5. **Re-comment** the `data-migration` service code in `docker-compose.yml`.
@@ -96,19 +102,25 @@ Set up your PostgreSQL database using the built-in Chainlit datalayer migrations
 By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN.
 
 1. Ensure the **Redis container** is running, or start it explicitly:
+
    ```bash
    docker compose up -d redis
    ```
+
 2. Modify the user details at the bottom of `scripts/signup.py` (username, name, password, and the AWS Role ARN you created in Step 2):
+
    ```python
    # Example in scripts/signup.py
    store_user("your-username", "Your Name", "SecurePassword!", "arn:aws:iam::123456789012:role/aws-finops-bot-user")
    ```
+
 3. Run the script:
+
    ```bash
    pip install redis bcrypt
    python scripts/signup.py
    ```
+
    *(The user credentials will be securely hashed and stored in Redis).*
 
 ### 6. Start the Application
@@ -120,6 +132,7 @@ docker compose up --build
 ```
 
 *(Optional) You can customize the MCP default versions at build time:*
+
 ```bash
 docker compose build --build-arg AWS_COST_EXPLORER_MCP_SERVER_VERSION=0.2.0
 docker compose up
@@ -134,7 +147,7 @@ Once the containers are successfully running, visit:
 
 For any low-level details, we've organized everything in the `docs` folder. New developers are recommended to look through these resources once they have their local environment up and running.
 
-* **[Architecture, Environment Configs, & Troubleshooting](docs/README.md)**: Deep dive into the flow, the exhaustive env var list, and common bug troubleshooting.
+* **[Architecture, Environment Config & Troubleshooting](docs/EXTENDED_README.md)**: Deep dive into the flow, the exhagustive env var list, and common bug troubleshooting.
 * **[LangGraph Implementation](docs/langgraph_implementation_and_workflow.md)**: Understand the LangGraph workflow layout.
 * **[Available MCP Servers & Tooling](docs/available_mcp_tools.md)**: Discover all integrated tool definitions.
 * **[LangGraph Migration & Prototype](docs/langgraph_migration.md)**: Read the backstory and transition details for the underlying orchestration layer.
