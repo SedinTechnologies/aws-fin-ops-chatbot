@@ -52,15 +52,15 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - azure-openai.env
-      - chainlit.env
-      - langgraph.env
-      - mcp-servers.env
-      - guardrails.env
+      - secrets/azure-openai.env
+      - secrets/chainlit.env
+      - secrets/langgraph.env
+      - secrets/mcp-servers.env
+      - secrets/guardrails.env
     volumes:
       - ./chainlit-config.toml:/app/.chainlit/config.toml
       # Need to mount aws env file to give access to MCP servers
-      - ./aws.env:/app/aws.env
+      - ${PWD}/secrets/aws.env:/app/aws-creds.env:ro
       # Development purposes
       - ./src:/app/src
       - ./scripts:/app/scripts

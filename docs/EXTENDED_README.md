@@ -76,19 +76,12 @@ The application uses several environment variables for configuration. These are 
 | `STREAMABLE_HTTP_READY_TIMEOUT` | `langgraph.env` | `25` | Streamable HTTP ready timeout (seconds) |
 | `STREAMABLE_HTTP_READY_INITIAL_DELAY` | `langgraph.env` | `2` | Streamable HTTP ready initial delay (seconds) |
 | **MCP Servers** | | | |
-| `AWS_COST_EXPLORER_MCP_PORT` | `mcp-servers.env` | `8001` | Port for Cost Explorer MCP Server |
-| `AWS_COST_EXPLORER_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Cost Explorer MCP Server |
-| `AWS_CCAPI_MCP_PORT` | `mcp-servers.env` | `8002` | Port for CCAPI MCP Server |
-| `AWS_CCAPI_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CCAPI MCP Server |
-| `AWS_CLOUDWATCH_MCP_PORT` | `mcp-servers.env` | `8003` | Port for CloudWatch MCP Server |
-| `AWS_CLOUDWATCH_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CloudWatch MCP Server |
-| `AWS_BILLING_MCP_PORT` | `mcp-servers.env` | `8004` | Port for Billing MCP Server |
-| `AWS_BILLING_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Billing MCP Server |
-| `AWS_CLOUDTRAIL_MCP_PORT` | `mcp-servers.env` | `8005` | Port for CloudTrail MCP Server |
-| `AWS_CLOUDTRAIL_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for CloudTrail MCP Server |
-| `AWS_PRICING_MCP_PORT` | `mcp-servers.env` | `8006` | Port for Pricing MCP Server |
-| `AWS_PRICING_MCP_HOST` | `mcp-servers.env` | `127.0.0.1` | Host for Pricing MCP Server |
-| `ENFORCE_LOCAL_MCP` | `mcp-servers.env` | `true` | Enforce local MCP execution |
+| `AWS_COST_EXPLORER_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for Cost Explorer MCP Server |
+| `AWS_CCAPI_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for CCAPI MCP Server |
+| `AWS_CLOUDWATCH_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for CloudWatch MCP Server |
+| `AWS_BILLING_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for Billing MCP Server |
+| `AWS_CLOUDTRAIL_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for CloudTrail MCP Server |
+| `AWS_PRICING_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for Pricing MCP Server |
 
 ---
 

@@ -20,6 +20,9 @@ def store_user(identifier: str, name: str, password: str, aws_role_arn: str):
   redis_client.set(key, json.dumps(data))
   print(f"Stored user {key} in Redis.")
 
-# Example usage
 if __name__ == "__main__":
-  store_user("sedin-rails-factory", "Sedin DevOps - RF", "SecurePass123!", "arn:aws:iam::784582181785:role/AwsFinOpsGPTRole")
+  user_id = os.getenv("USER_ID", "sedin-rails-factory")
+  display_name = os.getenv("DISPLAY_NAME", "Sedin DevOps - RF")
+  password = os.getenv("PASSWORD", "SecurePass123!")
+  aws_role_arn = os.getenv("AWS_ROLE_ARN", "arn:aws:iam::784582181785:role/AwsFinOpsGPTRole")
+  store_user(user_id, display_name, password, aws_role_arn)

@@ -27,7 +27,6 @@ ADAPTER_STATE_KEY = "mcp_adapter_state"
 DEFAULT_READY_TIMEOUT_SECONDS = 30.0
 DEFAULT_READY_DELAY_SECONDS = 1.0
 
-
 def _get_float_env(name: str, default: float) -> float:
   raw = os.getenv(name)
   if raw is None:
@@ -43,7 +42,6 @@ def _get_float_env(name: str, default: float) -> float:
     )
     return default
 
-
 STREAMABLE_HTTP_READY_TIMEOUT = _get_float_env(
   "STREAMABLE_HTTP_READY_TIMEOUT",
   DEFAULT_READY_TIMEOUT_SECONDS
@@ -53,10 +51,8 @@ STREAMABLE_HTTP_READY_DELAY = _get_float_env(
   DEFAULT_READY_DELAY_SECONDS
 )
 
-
 class StreamableHttpUnavailable(RuntimeError):
   """Raised when we cannot reach the configured streamable HTTP endpoint."""
-
 
 @dataclass
 class MCPToolEntry:
@@ -66,12 +62,10 @@ class MCPToolEntry:
   description: str
   server_name: str
 
-
 def _expected_connection_names(user: cl.User):
   metadata = getattr(user, "metadata", {}) or {}
   connections = metadata.get("mcp_connections", [])
   return [conn.get("name") for conn in connections if conn.get("name")]
-
 
 def _registry_ready(registry: dict | None, expected_names: list[str]) -> bool:
   if not registry:
@@ -84,7 +78,6 @@ def _registry_ready(registry: dict | None, expected_names: list[str]) -> bool:
     if not expected.issubset(server_names):
       return False
   return bool(servers) and bool(tool_specs)
-
 
 async def call_tool(tool_name, tool_args):
   guardrails = cl.user_session.get("guardrails")
@@ -129,7 +122,6 @@ async def call_tool(tool_name, tool_args):
     resp_items.append({"type": "text", "text": str(exc)})
 
   return resp_items
-
 
 async def fetch_registered_mcp_tools_for_user(user: cl.User):
   expected_names = _expected_connection_names(user)
@@ -182,7 +174,6 @@ async def fetch_registered_mcp_tools_for_user(user: cl.User):
 
   return new_registry["tool_specs"]
 
-
 async def get_configured_mcp_tools(user: cl.User) -> List[BaseTool]:
   """
   Returns the actual BaseTool objects for the user's configured MCP servers.
@@ -190,7 +181,7 @@ async def get_configured_mcp_tools(user: cl.User) -> List[BaseTool]:
   """
   expected_names = _expected_connection_names(user)
   registry = cl.user_session.get(ADAPTER_STATE_KEY)
-  
+
   # Ensure registry is ready
   if not _registry_ready(registry, expected_names):
     await fetch_registered_mcp_tools_for_user(user)
@@ -203,19 +194,14 @@ async def get_configured_mcp_tools(user: cl.User) -> List[BaseTool]:
   tools_map = registry.get("tools", {})
   return [entry.tool for entry in tools_map.values()]
 
-
 async def deregister_mcp_tools_for_user(user: cl.User):
   await _reset_adapter_state()
 
-
 async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]]:
   name = connection_meta["name"]
-  transport_meta = connection_meta.get("transport") or {}
-  normalized_transport = (transport_meta.get("type") or "").replace("-", "_").lower()
 
   started_process = False
   connection: Connection | None = None
-  last_exception: Exception | None = None
 
   if name in MCP_CLIENT_CACHE:
     cached_runtime, cached_entries = MCP_CLIENT_CACHE[name]
@@ -234,37 +220,27 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
         logger.info(f"Reusing cached MCP client and tools for '{name}'")
         return cached_runtime, cached_entries
 
-  if normalized_transport == "streamable_http":
-    try:
-      started_process = await _ensure_streamable_http_process(
-        name,
-        connection_meta.get("command"),
-        transport_meta.get("url")
-      )
-      connection = _build_streamable_connection(transport_meta)
-    except Exception as exc:  # noqa: BLE001
-      last_exception = exc
-      logger.warning(
-        "Streamable HTTP connection failed for '%s': %s",
-        name,
-        exc
-      )
-      await _stop_streamable_http_process(name)
-      connection = None
+  try:
+    started_process = await _ensure_streamable_http_process(
+      name,
+      connection_meta.get("command"),
+      connection_meta.get('url')
+    )
+    connection = {
+      "transport": "streamable_http",
+      "url": connection_meta.get('url'),
+      "headers": { "Authorization": "no-auth" }
+    }
+  except Exception as exc:  # noqa: BLE001
+    logger.warning(
+      "Streamable HTTP connection failed for '%s': %s",
+      name,
+      exc
+    )
+    await _stop_streamable_http_process(name)
+    connection = None
 
-  if connection is None:
-    stdio_command = connection_meta.get("stdio_command")
-    logger.info(f"[DEBUG] Fallback to stdio for {name}. stdio_command: {stdio_command}")
-    if not stdio_command:
-      if last_exception:
-        raise last_exception
-      raise StreamableHttpUnavailable(
-        f"No stdio command available for MCP '{name}'"
-      )
-    connection = _build_stdio_connection(stdio_command)
-    transport_mode = "stdio"
-  else:
-    transport_mode = "streamable_http"
+  transport_mode = "streamable_http"
 
   try:
       tools = await load_mcp_tools(
@@ -293,12 +269,11 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
     "transport": transport_mode,
     "started_http_process": started_process
   }
-  
+
   # Cache the result
   MCP_CLIENT_CACHE[name] = (runtime, entries)
 
   return runtime, entries
-
 
 def _build_tool_entry(tool: BaseTool, server_name: str) -> MCPToolEntry:
   args_schema = getattr(tool, "args_schema", None)
@@ -320,7 +295,6 @@ def _build_tool_entry(tool: BaseTool, server_name: str) -> MCPToolEntry:
     server_name=server_name
   )
 
-
 async def _reset_adapter_state():
   registry = cl.user_session.get(ADAPTER_STATE_KEY)
   if not registry:
@@ -332,7 +306,6 @@ async def _reset_adapter_state():
       await _stop_streamable_http_process(runtime["name"])
 
   cl.user_session.set(ADAPTER_STATE_KEY, None)
-
 
 async def _wait_for_endpoint_ready(
   url: str,
@@ -366,7 +339,6 @@ async def _wait_for_endpoint_ready(
         ) from exc
       await asyncio.sleep(0.5)
 
-
 def _build_streamable_connection(transport: dict) -> Connection:
   url = transport.get("url")
   if not url:
@@ -377,17 +349,6 @@ def _build_streamable_connection(transport: dict) -> Connection:
     "url": url,
     "headers": headers
   }
-
-
-def _build_stdio_connection(command: str) -> Connection:
-  if not command:
-    raise ValueError("STDIO command is required.")
-  return {
-    "transport": "stdio",
-    "command": "/bin/sh",
-    "args": ["-c", command]
-  }
-
 
 # Global registry to track MCP processes across sessions
 # Key: mcp_name, Value: asyncio.subprocess.Process
@@ -440,10 +401,10 @@ async def _ensure_streamable_http_process(
     stdout=None,
     stderr=None
   )
-  
+
   # Store in global registry
   MCP_SERVER_REGISTRY[mcp_name] = proc
-  
+
   processes[mcp_name] = proc
   cl.user_session.set(STREAMABLE_PROC_KEY, processes)
 
@@ -468,7 +429,6 @@ async def _ensure_streamable_http_process(
 
   return True
 
-
 async def _stop_streamable_http_process(mcp_name: str):
   processes = cl.user_session.get(STREAMABLE_PROC_KEY) or {}
   proc: asyncio.subprocess.Process | None = processes.pop(mcp_name, None)
@@ -487,7 +447,7 @@ async def _stop_streamable_http_process(mcp_name: str):
     await proc.wait()
 
   cl.user_session.set(STREAMABLE_PROC_KEY, processes)
-  
+
   # Remove from global registry
   if mcp_name in MCP_SERVER_REGISTRY:
     MCP_SERVER_REGISTRY.pop(mcp_name, None)
@@ -510,7 +470,6 @@ def _format_tool_response(result: Any) -> List[Dict[str, Any]]:
 
   return items or [{"type": "text", "text": ""}]
 
-
 def _flatten_text_content(content: Any) -> List[str]:
   if content is None:
     return []
@@ -529,7 +488,6 @@ def _flatten_text_content(content: Any) -> List[str]:
     except Exception:  # noqa: BLE001
       return ["[command]"]
   return [str(content)]
-
 
 def _convert_artifact(artifact: Any) -> List[Dict[str, Any]]:
   if isinstance(artifact, ImageContent):

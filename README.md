@@ -69,7 +69,7 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
      ```
 
 3. **Generate an Access Key** for this IAM User (or obtain credentials for the Role).
-4. **Update Configuration**: Add the generated Access Key ID and Secret Access Key to the `aws.env` file in the root of the repository:
+4. **Update Configuration**: Add the generated Access Key ID and Secret Access Key to the `aws.env` file in the [secrets](secrets/) directory of the repository:
 
    ```env
    AWS_ACCESS_KEY_ID=your_access_key_here
@@ -90,56 +90,56 @@ Set up your PostgreSQL database using the built-in Chainlit datalayer migrations
 2. Build and run the migration containers:
 
    ```bash
-   docker compose up postgres data-migration --build
+   docker compose up postgres data-migration --build --abort-on-container-exit
    ```
 
-3. Wait for the migrations to complete successfully in your terminal logs.
-4. Stop the docker compose process (e.g., using `Ctrl+C`).
-5. **Re-comment** the `data-migration` service code in `docker-compose.yml`.
+3. Please check for the success message in the terminal logs to confirm that the migrations have completed successfully.
+4. **Re-comment** the `data-migration` service code in `docker-compose.yml`.
 
-### 5. Create a Chainlit Login User (Redis Authentication)
-
-By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN.
-
-1. Ensure the **Redis container** is running, or start it explicitly:
-
-   ```bash
-   docker compose up -d redis
-   ```
-
-2. Modify the user details at the bottom of `scripts/signup.py` (username, name, password, and the AWS Role ARN you created in Step 2):
-
-   ```python
-   # Example in scripts/signup.py
-   store_user("your-username", "Your Name", "SecurePassword!", "arn:aws:iam::123456789012:role/aws-finops-bot-user")
-   ```
-
-3. Run the script:
-
-   ```bash
-   pip install redis bcrypt
-   python scripts/signup.py
-   ```
-
-   *(The user credentials will be securely hashed and stored in Redis).*
-
-### 6. Start the Application
+### 5. Start the Application
 
 Start the full stack (Chainlit App, PostgreSQL, Redis, and Localstack) in the background:
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
 *(Optional) You can customize the MCP default versions at build time:*
 
 ```bash
 docker compose build --build-arg AWS_COST_EXPLORER_MCP_SERVER_VERSION=0.2.0
-docker compose up
+docker compose up -d
 ```
 
-Once the containers are successfully running, visit:
-**🔗 [http://localhost:8000](http://localhost:8000)**
+### 6. Create a Chainlit Login User (Redis Authentication)
+
+By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN.
+
+1. Ensure all the services are running. You can check the status of the services by running the following command:
+
+   ```bash
+   docker compose ps
+   ```
+
+   You should see `chainlit-ui`, `redis`, `postgres` and `localstack` services running. If not, please troubleshoot the issue by checking the logs of the respective services.
+
+2. Please replace the values of `USER_ID`, `DISPLAY_NAME`, `PASSWORD`, and `AWS_ROLE_ARN` with your own values and then run the following script:
+
+   ```bash
+   docker compose exec -it chainlit-ui bash -c "USER_ID='[USER_ID]' \
+   DISPLAY_NAME='[DISPLAY_NAME]' \
+   PASSWORD='[PASSWORD]' \
+   AWS_ROLE_ARN='[AWS_ROLE_ARN]' \
+   python scripts/signup.py"
+   ```
+
+   Upon successful execution, you should see the following output:
+
+   ```text
+    Stored user user:[USER_ID] in Redis.
+   ```
+
+You can now login into the application at: **🔗 [http://localhost:8000](http://localhost:8000)** and start chatting with the bot.
 
 ---
 
