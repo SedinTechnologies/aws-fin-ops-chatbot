@@ -1,0 +1,9 @@
+aws-iac: AWS_API_MCP_PORT=8001 AWS_API_MCP_URL="http://mcp-servers:8001/mcp" AWS_API_MCP_CLIENT_HOST="mcp-servers" AWS_API_MCP_HOST="mcp-servers" AWS_API_MCP_ALLOWED_ORIGINS="http://mcp-servers:8001/mcp" uvicorn --factory awslabs.aws_iac_mcp_server.server:mcp.http_app --host 0.0.0.0 --port 8001
+
+cloudwatch: AWS_API_MCP_PORT=8002 AWS_API_MCP_URL="http://mcp-servers:8002/mcp" AWS_API_MCP_CLIENT_HOST="mcp-servers" AWS_API_MCP_HOST="mcp-servers" AWS_API_MCP_ALLOWED_ORIGINS="http://mcp-servers:8002/mcp" uvicorn --factory awslabs.cloudwatch_mcp_server.server:mcp.streamable_http_app --host 0.0.0.0 --port 8002
+
+billing: AWS_API_MCP_PORT=8003 AWS_API_MCP_URL="http://mcp-servers:8003/mcp" AWS_API_MCP_CLIENT_HOST="mcp-servers" AWS_API_MCP_HOST="mcp-servers" AWS_API_MCP_ALLOWED_ORIGINS="http://mcp-servers:8003/mcp" uvicorn --factory awslabs.billing_cost_management_mcp_server.server:mcp.http_app --host 0.0.0.0 --port 8003
+
+cloudtrail: AWS_API_MCP_PORT=8004 AWS_API_MCP_URL="http://mcp-servers:8004/mcp" AWS_API_MCP_CLIENT_HOST="mcp-servers" AWS_API_MCP_HOST="mcp-servers" AWS_API_MCP_ALLOWED_ORIGINS="http://mcp-servers:8004/mcp" uvicorn --factory awslabs.cloudtrail_mcp_server.server:mcp.streamable_http_app --host 0.0.0.0 --port 8004
+
+pricing: AWS_API_MCP_PORT=8005 AWS_API_MCP_URL="http://mcp-servers:8005/mcp" AWS_API_MCP_CLIENT_HOST="mcp-servers" AWS_API_MCP_HOST="mcp-servers" AWS_API_MCP_ALLOWED_ORIGINS="http://mcp-servers:8005/mcp" uvicorn --factory awslabs.aws_pricing_mcp_server.server:mcp.streamable_http_app --host 0.0.0.0 --port 8005

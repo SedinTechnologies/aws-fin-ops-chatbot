@@ -11,7 +11,7 @@ from mcp_tool_helper import (
   fetch_registered_mcp_tools_for_user,
   get_configured_mcp_tools
 )
-from mcp_utils import build_mcp_connections_for_user
+from mcp_utils import register_mcp_connections_for_user
 from azure_openai_client import AzureOpenAIClient
 from langgraph_app import LangGraphClient
 from session_store import RedisSessionStore
@@ -59,11 +59,9 @@ async def auth_callback(username: str, password: str):
     return None
 
   return cl.User(
-    identifier=user["identifier"],
-    display_name=user["name"],
-    metadata={
-      "mcp_connections": build_mcp_connections_for_user(user)
-    }
+    identifier     = user["identifier"],
+    display_name  = user["name"],
+    metadata      = { "mcp_connections": register_mcp_connections_for_user(user) }
   )
 
 @cl.on_chat_start
@@ -76,7 +74,7 @@ async def on_chat_start():
 
   user_details = store.get_user(user.identifier)
   if user_details:
-      user.metadata["mcp_connections"] = build_mcp_connections_for_user(user_details)
+      user.metadata["mcp_connections"] = register_mcp_connections_for_user(user_details)
       cl.user_session.set("user", user)
       logger.info(f"Refreshed MCP connections for user {user.identifier}")
 
@@ -95,7 +93,6 @@ async def on_chat_start():
 
   cl.user_session.set("langgraph_enabled", ENABLE_LANGGRAPH)
   cl.user_session.set("client", client)
-  cl.user_session.set("mcp_tools", {})
   cl.user_session.set("memory", [])
 
   logger.info(f"User {user.display_name} has logged in. Session ID: {cl.context.session.id}")
@@ -118,7 +115,7 @@ async def on_chat_resume(thread: ThreadDict):
   # Refresh MCP connections for resumed sessions as well
   user_details = store.get_user(user.identifier)
   if user_details:
-      user.metadata["mcp_connections"] = build_mcp_connections_for_user(user_details)
+      user.metadata["mcp_connections"] = register_mcp_connections_for_user(user_details)
       cl.user_session.set("user", user)
       logger.info(f"Refreshed MCP connections for user {user.identifier} (resume)")
 
@@ -145,7 +142,6 @@ async def on_chat_resume(thread: ThreadDict):
     client.messages.extend(memory)
   cl.user_session.set("langgraph_enabled", use_langgraph)
   cl.user_session.set("client", client)
-  cl.user_session.set("mcp_tools", {})
 
   # Save the restored memory/context back into the user session
   cl.user_session.set("memory", memory)
@@ -156,22 +152,8 @@ async def on_chat_end():
   if user:
     # Do not deregister MCP tools on chat end to allow reuse across sessions/chats
     # await deregister_mcp_tools_for_user(user)
-    cl.user_session.set("mcp_tools", {})
     logger.info(f"User {user.display_name} session ended with ID: {cl.context.session.id}")
 
-@cl.on_mcp_connect
-async def on_mcp_connect(connection, session: ClientSession):
-  result = await session.list_tools()
-  tools = [{
-    "name": t.name,
-    "description": t.description,
-    "parameters": t.inputSchema,
-    } for t in result.tools]
-
-  mcp_tools = cl.user_session.get("mcp_tools", {})
-  mcp_tools[connection.name] = tools
-  cl.user_session.set("mcp_tools", mcp_tools)
-  logger.info(f"Registered tools from MCP '{connection.name}' for Session ID: {cl.context.session.id}")
 
 @cl.on_message
 async def new_message(message: cl.Message):

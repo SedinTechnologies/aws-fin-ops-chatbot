@@ -37,8 +37,8 @@ Follow these steps to get a local development environment running quickly so you
 Clone the project to your local machine and navigate into the directory:
 
 ```bash
-git clone <repo-url>
-cd aws-finops-bot
+git clone https://github.com/SedinTechnologies/aws-fin-ops-chatbot.git
+cd aws-fin-ops-chatbot
 ```
 
 ### 2. Configure AWS IAM Role & Credentials
@@ -86,44 +86,33 @@ The application relies on several other environment files (`azure-openai.env`, `
 
 Set up your PostgreSQL database using the built-in Chainlit datalayer migrations:
 
-1. Open `docker-compose.yml` and **uncomment** the `data-migration` service code.
-2. Build and run the migration containers:
+1. Start the `data-migration` service which will run the migrations required for the Chainlit datalayer:
 
    ```bash
-   docker compose up postgres data-migration --build --abort-on-container-exit
+   docker compose up data-migration
    ```
 
-3. Please check for the success message in the terminal logs to confirm that the migrations have completed successfully.
-4. **Re-comment** the `data-migration` service code in `docker-compose.yml`.
+2. After the data migration container exists, please check for the success message in the terminal logs to confirm that the migrations have completed successfully.
 
 ### 5. Start the Application
 
 Start the full stack (Chainlit App, PostgreSQL, Redis, and Localstack) in the background:
 
+  ```bash
+  docker compose up --build -d
+  ```
+
+Ensure all the services are running. You can check the status of the services by running the following command:
+
 ```bash
-docker compose up --build -d
+docker compose ps
 ```
 
-*(Optional) You can customize the MCP default versions at build time:*
-
-```bash
-docker compose build --build-arg AWS_COST_EXPLORER_MCP_SERVER_VERSION=0.2.0
-docker compose up -d
-```
+You should see `chainlit-ui`, `redis`, `mcp-servers`, `postgres` and `localstack` services running. If not, please troubleshoot the issue by checking the logs of the respective services.
 
 ### 6. Create a Chainlit Login User (Redis Authentication)
 
-By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN.
-
-1. Ensure all the services are running. You can check the status of the services by running the following command:
-
-   ```bash
-   docker compose ps
-   ```
-
-   You should see `chainlit-ui`, `redis`, `postgres` and `localstack` services running. If not, please troubleshoot the issue by checking the logs of the respective services.
-
-2. Please replace the values of `USER_ID`, `DISPLAY_NAME`, `PASSWORD`, and `AWS_ROLE_ARN` with your own values and then run the following script:
+By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN. Please replace the values of `USER_ID`, `DISPLAY_NAME`, `PASSWORD`, and `AWS_ROLE_ARN` accordingly and then run the following command:
 
    ```bash
    docker compose exec -it chainlit-ui bash -c "USER_ID='[USER_ID]' \
@@ -139,7 +128,7 @@ By default, the application enforces login through Chainlit, authenticating agai
     Stored user user:[USER_ID] in Redis.
    ```
 
-You can now login into the application at: **🔗 [http://localhost:8000](http://localhost:8000)** and start chatting with the bot.
+* You can now login into the application at: **🔗 [http://localhost:8000](http://localhost:8000)** and start chatting with the bot.
 
 ---
 

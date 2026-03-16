@@ -1,10 +1,8 @@
 import asyncio
 import logging
-import os
 import traceback
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
-from urllib.parse import urlparse
 
 import chainlit as cl
 from langchain_core.messages import ToolMessage
@@ -22,37 +20,7 @@ except ImportError:  # pragma: no cover
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-STREAMABLE_PROC_KEY = "streamable_mcp_processes"
 ADAPTER_STATE_KEY = "mcp_adapter_state"
-DEFAULT_READY_TIMEOUT_SECONDS = 30.0
-DEFAULT_READY_DELAY_SECONDS = 1.0
-
-def _get_float_env(name: str, default: float) -> float:
-  raw = os.getenv(name)
-  if raw is None:
-    return default
-  try:
-    return float(raw)
-  except ValueError:
-    logger.warning(
-      "Invalid value '%s' for %s. Falling back to default %.1f seconds.",
-      raw,
-      name,
-      default
-    )
-    return default
-
-STREAMABLE_HTTP_READY_TIMEOUT = _get_float_env(
-  "STREAMABLE_HTTP_READY_TIMEOUT",
-  DEFAULT_READY_TIMEOUT_SECONDS
-)
-STREAMABLE_HTTP_READY_DELAY = _get_float_env(
-  "STREAMABLE_HTTP_READY_INITIAL_DELAY",
-  DEFAULT_READY_DELAY_SECONDS
-)
-
-class StreamableHttpUnavailable(RuntimeError):
-  """Raised when we cannot reach the configured streamable HTTP endpoint."""
 
 @dataclass
 class MCPToolEntry:
@@ -175,10 +143,6 @@ async def fetch_registered_mcp_tools_for_user(user: cl.User):
   return new_registry["tool_specs"]
 
 async def get_configured_mcp_tools(user: cl.User) -> List[BaseTool]:
-  """
-  Returns the actual BaseTool objects for the user's configured MCP servers.
-  This is required for LangGraph's ToolNode.
-  """
   expected_names = _expected_connection_names(user)
   registry = cl.user_session.get(ADAPTER_STATE_KEY)
 
@@ -190,89 +154,56 @@ async def get_configured_mcp_tools(user: cl.User) -> List[BaseTool]:
   if not registry or "tools" not in registry:
     return []
 
-  # Extract the actual BaseTool objects from the registry entries
   tools_map = registry.get("tools", {})
   return [entry.tool for entry in tools_map.values()]
 
 async def deregister_mcp_tools_for_user(user: cl.User):
   await _reset_adapter_state()
 
+# Global registry to track MCP clients/tools across sessions
+# Key: mcp_name, Value: (runtime, entries)
+MCP_CLIENT_CACHE: Dict[str, Tuple[Dict[str, Any], List[MCPToolEntry]]] = {}
+
 async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]]:
   name = connection_meta["name"]
 
-  started_process = False
-  connection: Connection | None = None
-
   if name in MCP_CLIENT_CACHE:
-    cached_runtime, cached_entries = MCP_CLIENT_CACHE[name]
-    # Verify if the process (if any) is still alive
-    if cached_runtime.get("started_http_process"):
-      proc = MCP_SERVER_REGISTRY.get(name)
-      if proc and proc.returncode is None:
-        logger.info(f"Reusing cached MCP client and tools for '{name}'")
-        return cached_runtime, cached_entries
-      else:
-        logger.warning(f"Cached MCP process for '{name}' is dead or missing. Re-initializing.")
-        MCP_CLIENT_CACHE.pop(name, None)
-    else:
-        # For stdio or external http, assume it's still good for now
-        # (Stdio connection might be dead, but we can't easily check without trying)
-        logger.info(f"Reusing cached MCP client and tools for '{name}'")
-        return cached_runtime, cached_entries
+    logger.info(f"Reusing cached MCP client and tools for '{name}'")
+    return MCP_CLIENT_CACHE[name]
+
+  url = connection_meta.get('url')
+  if not url:
+    raise ValueError(f"MCP connection '{name}' requires a 'url'")
+
+  connection = {
+    "transport": "sse",
+    "url": url,
+    "headers": {}
+  }
 
   try:
-    started_process = await _ensure_streamable_http_process(
-      name,
-      connection_meta.get("command"),
-      connection_meta.get('url')
+    tools = await load_mcp_tools(
+      None,
+      connection=connection,
+      server_name=name
     )
-    connection = {
-      "transport": "streamable_http",
-      "url": connection_meta.get('url'),
-      "headers": { "Authorization": "no-auth" }
-    }
-  except Exception as exc:  # noqa: BLE001
-    logger.warning(
-      "Streamable HTTP connection failed for '%s': %s",
-      name,
-      exc
-    )
-    await _stop_streamable_http_process(name)
-    connection = None
-
-  transport_mode = "streamable_http"
-
-  try:
-      tools = await load_mcp_tools(
-        None,
-        connection=connection,
-        server_name=name
-      )
   except Exception as tool_load_exc:
-     logger.error(f"Failed to load MCP tools for {name}: {tool_load_exc}")
+     logger.error(f"Failed to load MCP tools for {name} at {url}: {tool_load_exc}")
      raise tool_load_exc
 
   for tool in tools:
     tool.handle_tool_error = True
 
   entries = [_build_tool_entry(tool, name) for tool in tools]
-  logger.info(
-    "Registered %s tools for MCP '%s' via %s transport",
-    len(entries),
-    name,
-    transport_mode
-  )
+  logger.info("Registered %s tools for remote MCP '%s'", len(entries), name)
 
   runtime = {
     "name": name,
     "connection": connection,
-    "transport": transport_mode,
-    "started_http_process": started_process
+    "transport": "sse"
   }
 
-  # Cache the result
   MCP_CLIENT_CACHE[name] = (runtime, entries)
-
   return runtime, entries
 
 def _build_tool_entry(tool: BaseTool, server_name: str) -> MCPToolEntry:
@@ -296,162 +227,7 @@ def _build_tool_entry(tool: BaseTool, server_name: str) -> MCPToolEntry:
   )
 
 async def _reset_adapter_state():
-  registry = cl.user_session.get(ADAPTER_STATE_KEY)
-  if not registry:
-    return
-
-  servers: dict[str, dict] = registry.get("servers") or {}
-  for runtime in servers.values():
-    if runtime.get("started_http_process"):
-      await _stop_streamable_http_process(runtime["name"])
-
   cl.user_session.set(ADAPTER_STATE_KEY, None)
-
-async def _wait_for_endpoint_ready(
-  url: str,
-  *,
-  process: asyncio.subprocess.Process | None = None,
-  timeout: float | None = None
-) -> None:
-  if not url:
-    return
-  timeout = timeout or STREAMABLE_HTTP_READY_TIMEOUT
-  parsed = urlparse(url)
-  host = parsed.hostname or "127.0.0.1"
-  port = parsed.port or (443 if parsed.scheme == "https" else 80)
-  loop = asyncio.get_running_loop()
-  deadline = loop.time() + timeout
-  while True:
-    if process and process.returncode is not None:
-      raise StreamableHttpUnavailable(
-        f"Streamable HTTP MCP process exited early with code {process.returncode} "
-        f"while waiting for {host}:{port} to become ready."
-      )
-    try:
-      reader, writer = await asyncio.open_connection(host, port)
-      writer.close()
-      await writer.wait_closed()
-      return
-    except Exception as exc:  # noqa: BLE001
-      if loop.time() >= deadline:
-        raise StreamableHttpUnavailable(
-          f"Timed out waiting for MCP endpoint at {host}:{port} to become ready ({exc})"
-        ) from exc
-      await asyncio.sleep(0.5)
-
-def _build_streamable_connection(transport: dict) -> Connection:
-  url = transport.get("url")
-  if not url:
-    raise ValueError("Streamable HTTP transport missing 'url'.")
-  headers = {"Authorization": transport.get("auth", "no-auth")}
-  return {
-    "transport": "streamable_http",
-    "url": url,
-    "headers": headers
-  }
-
-# Global registry to track MCP processes across sessions
-# Key: mcp_name, Value: asyncio.subprocess.Process
-MCP_SERVER_REGISTRY: Dict[str, asyncio.subprocess.Process] = {}
-
-# Global registry to track MCP clients/tools across sessions
-# Key: mcp_name, Value: (runtime, entries)
-MCP_CLIENT_CACHE: Dict[str, Tuple[Dict[str, Any], List[MCPToolEntry]]] = {}
-
-async def _ensure_streamable_http_process(
-  mcp_name: str,
-  command: str | None,
-  transport_url: str | None
-) -> bool:
-  if not command:
-    logger.warning(
-      "Streamable HTTP MCP '%s' missing command. Skipping auto-start; assuming external server exists.",
-      mcp_name
-    )
-    return False
-
-  # Check global registry first
-  existing_proc = MCP_SERVER_REGISTRY.get(mcp_name)
-  if existing_proc:
-    if existing_proc.returncode is None:
-      logger.info("Reusing existing global MCP process for '%s'", mcp_name)
-      # Also update session for cleanup purposes if needed, though we might want to keep it global
-      processes = cl.user_session.get(STREAMABLE_PROC_KEY) or {}
-      processes[mcp_name] = existing_proc
-      cl.user_session.set(STREAMABLE_PROC_KEY, processes)
-      return True
-    else:
-      # Process died, remove from registry
-      logger.warning("Existing global MCP process for '%s' died with code %s", mcp_name, existing_proc.returncode)
-      MCP_SERVER_REGISTRY.pop(mcp_name, None)
-
-  # Also check session (though less likely to be useful if session cleared)
-  processes = cl.user_session.get(STREAMABLE_PROC_KEY) or {}
-  existing_proc = processes.get(mcp_name)
-
-  if existing_proc and existing_proc.returncode is None:
-    return False
-
-  if existing_proc and existing_proc.returncode is not None:
-    processes.pop(mcp_name, None)
-
-  logger.info("Starting streamable HTTP MCP server '%s' with command: %s", mcp_name, command)
-  proc = await asyncio.create_subprocess_shell(
-    command,
-    stdout=None,
-    stderr=None
-  )
-
-  # Store in global registry
-  MCP_SERVER_REGISTRY[mcp_name] = proc
-
-  processes[mcp_name] = proc
-  cl.user_session.set(STREAMABLE_PROC_KEY, processes)
-
-  if STREAMABLE_HTTP_READY_DELAY > 0:
-    await asyncio.sleep(STREAMABLE_HTTP_READY_DELAY)
-
-  try:
-    if transport_url:
-      await _wait_for_endpoint_ready(
-        transport_url,
-        process=proc,
-        timeout=STREAMABLE_HTTP_READY_TIMEOUT
-      )
-  except StreamableHttpUnavailable as exc:
-    await _stop_streamable_http_process(mcp_name)
-    raise exc
-
-  if proc.returncode is not None:
-    raise RuntimeError(
-      f"Streamable HTTP MCP server '{mcp_name}' exited early with code {proc.returncode}"
-    )
-
-  return True
-
-async def _stop_streamable_http_process(mcp_name: str):
-  processes = cl.user_session.get(STREAMABLE_PROC_KEY) or {}
-  proc: asyncio.subprocess.Process | None = processes.pop(mcp_name, None)
-  if not proc:
-    return
-
-  if proc.returncode is not None:
-    return
-
-  logger.info("Stopping streamable HTTP MCP server '%s'", mcp_name)
-  proc.terminate()
-  try:
-    await asyncio.wait_for(proc.wait(), timeout=5)
-  except asyncio.TimeoutError:
-    proc.kill()
-    await proc.wait()
-
-  cl.user_session.set(STREAMABLE_PROC_KEY, processes)
-
-  # Remove from global registry
-  if mcp_name in MCP_SERVER_REGISTRY:
-    MCP_SERVER_REGISTRY.pop(mcp_name, None)
-
 
 def _format_tool_response(result: Any) -> List[Dict[str, Any]]:
   text_content: Any = result
