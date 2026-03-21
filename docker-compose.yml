@@ -52,14 +52,24 @@ services:
       - "8003:8003"
       - "8004:8004"
       - "8005:8005"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; [socket.create_connection(('localhost', p), timeout=2).close() for p in range(8001, 8006)]"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   chainlit-ui:
     platform: linux/arm64
     depends_on:
-      - redis
-      - postgres
-      - localstack
-      - mcp-servers
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_started
+      localstack:
+        condition: service_started
+      mcp-servers:
+        condition: service_healthy
     build:
       context: ./
     ports:

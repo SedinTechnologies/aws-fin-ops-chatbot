@@ -1,28 +1,17 @@
-FROM python:3.13-slim
+FROM python:3.13.12-slim
 
 WORKDIR /app
 
-# Install dependencies
-RUN pip install uvicorn==0.41.0 honcho==2.0.0
+COPY requirements.txt ./
 
-# Install AWS MCP servers with streamable-http support
-RUN pip install \
-    "awslabs.aws-iac-mcp-server[streamable-http]==1.0.15" \
-    "awslabs.cloudwatch-mcp-server[streamable-http]==0.0.22" \
-    "awslabs.billing-cost-management-mcp-server[streamable-http]==0.0.16" \
-    "awslabs.cloudtrail-mcp-server[streamable-http]==0.0.12" \
-    "awslabs.aws-pricing-mcp-server[streamable-http]==1.0.26"
+RUN pip install --no-cache-dir -r requirements.txt \
+  && rm -rf /var/cache/apt/*
 
-COPY Procfile.mcp /app/Procfile
+COPY Procfile.mcp ./Procfile
 
 EXPOSE 8001 8002 8003 8004 8005
 
-ENV AWS_API_MCP_TRANSPORT="streamable-http"
-ENV AUTH_TYPE="no-auth"
-ENV AWS_API_MCP_HOST="0.0.0.0"
-ENV AWS_API_MCP_BIND_HOST="0.0.0.0"
-ENV AWS_API_MCP_CLIENT_HOST="0.0.0.0"
-ENV AWS_API_MCP_ALLOWED_HOSTS="*"
 ENV AWS_REGION="${AWS_REGION:-us-east-1}"
+ENV AWS_API_MCP_TRANSPORT="streamable-http"
 
 CMD ["honcho", "start"]

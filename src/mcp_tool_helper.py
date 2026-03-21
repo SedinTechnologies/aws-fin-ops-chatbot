@@ -176,9 +176,9 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
     raise ValueError(f"MCP connection '{name}' requires a 'url'")
 
   connection = {
-    "transport": "sse",
+    "transport": "streamable_http",
     "url": url,
-    "headers": {}
+    "headers": {"Host": connection_meta.get("host")}
   }
 
   try:

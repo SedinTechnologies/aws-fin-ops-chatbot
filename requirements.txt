@@ -1,0 +1,8 @@
+# Used for mcp servers docker image
+uvicorn==0.41.0
+honcho==2.0.0
+awslabs.aws-iac-mcp-server[streamable-http]==1.0.15
+awslabs.cloudwatch-mcp-server[streamable-http]==0.0.22
+awslabs.billing-cost-management-mcp-server[streamable-http]==0.0.16
+awslabs.cloudtrail-mcp-server[streamable-http]==0.0.12
+awslabs.aws-pricing-mcp-server[streamable-http]==1.0.26
