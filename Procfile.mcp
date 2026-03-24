@@ -2,7 +2,7 @@ aws-iac: uvicorn --factory awslabs.aws_iac_mcp_server.server:mcp.http_app --host
 
 cloudwatch: uvicorn --factory awslabs.cloudwatch_mcp_server.server:mcp.streamable_http_app --host 0.0.0.0 --port 8002
 
-billing: uvicorn --factory awslabs.billing_cost_management_mcp_server.server:mcp.http_app --host 0.0.0.0 --port 8003
+billing: uvicorn --factory billing_server:create_app --host 0.0.0.0 --port 8003
 
 cloudtrail: uvicorn --factory awslabs.cloudtrail_mcp_server.server:mcp.streamable_http_app --host 0.0.0.0 --port 8004
 

@@ -9,6 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY Procfile.mcp ./Procfile
 
+COPY billing_server.py /app/billing_server.py
+
 EXPOSE 8001 8002 8003 8004 8005
 
 ENV AWS_REGION="${AWS_REGION:-us-east-1}"
