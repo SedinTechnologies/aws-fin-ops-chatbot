@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def register_mcp_connections_for_user(user: Dict[str, Any]) -> List[Dict[str, Any]]:
+def enabled_mcp_connections_list() -> List[Dict[str, Any]]:
   logger.info(f"Generating MCP connections for user")
   # Using host field to mitigate DNS Rebinding Protection
   return [

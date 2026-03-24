@@ -11,9 +11,9 @@ from mcp_tool_helper import (
   fetch_registered_mcp_tools_for_user,
   get_configured_mcp_tools
 )
-from mcp_utils import register_mcp_connections_for_user
+from mcp_utils import enabled_mcp_connections_list
 from azure_openai_client import AzureOpenAIClient
-from langgraph_app import LangGraphClient
+from langgraph_client import LangGraphClient
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
 from guardrails import GuardrailEngine, GuardrailViolation
@@ -52,16 +52,16 @@ async def set_starters():
 
 @cl.password_auth_callback
 async def auth_callback(username: str, password: str):
-  print(f"[AUTH_DEBUG] auth_callback called for username: {username}")
   user = auth.authenticate(username, password)
   if not user:
-    print("[AUTH_DEBUG] Authentication failed")
+    logger.debug("Authentication failed")
     return None
 
+  logger.debug(f"Authentication successful for username: {username}")
   return cl.User(
     identifier     = user["identifier"],
     display_name  = user["name"],
-    metadata      = { "mcp_connections": register_mcp_connections_for_user(user) }
+    metadata      = { "mcp_connections": enabled_mcp_connections_list() }
   )
 
 @cl.on_chat_start
@@ -72,11 +72,10 @@ async def on_chat_start():
     await cl.Message(content="Please login to continue.").send()
     return
 
-  user_details = store.get_user(user.identifier)
-  if user_details:
-      user.metadata["mcp_connections"] = register_mcp_connections_for_user(user_details)
-      cl.user_session.set("user", user)
-      logger.info(f"Refreshed MCP connections for user {user.identifier}")
+  if store.get_user(user.identifier):
+    user.metadata["mcp_connections"] = enabled_mcp_connections_list()
+    cl.user_session.set("user", user)
+    logger.info(f"Refreshed MCP connections for user {user.identifier}")
 
   guardrails = GuardrailEngine.from_env()
   cl.user_session.set("guardrails", guardrails)
@@ -115,7 +114,7 @@ async def on_chat_resume(thread: ThreadDict):
   # Refresh MCP connections for resumed sessions as well
   user_details = store.get_user(user.identifier)
   if user_details:
-      user.metadata["mcp_connections"] = register_mcp_connections_for_user(user_details)
+      user.metadata["mcp_connections"] = enabled_mcp_connections_list()
       cl.user_session.set("user", user)
       logger.info(f"Refreshed MCP connections for user {user.identifier} (resume)")
 
@@ -124,13 +123,8 @@ async def on_chat_resume(thread: ThreadDict):
   use_langgraph = ENABLE_LANGGRAPH
   client = None
   if use_langgraph:
-    # Get the tool objects for LangGraph
     from mcp_tool_helper import get_configured_mcp_tools
-    # Note: We might need to re-fetch tools if they are not in session
-    # But for resume, we assume session is active or we re-fetch
     try:
-       # Force re-fetch with new metadata
-       await fetch_registered_mcp_tools_for_user(user)
        tools = await get_configured_mcp_tools(user)
        client = LangGraphClient(tools=tools)
     except Exception:
@@ -198,9 +192,6 @@ async def new_message(message: cl.Message):
       buffered_chunks: List[str] = []
       next_questions: List[Dict[str, Any]] = []
 
-      logger.info(f"[STREAM_DEBUG] Starting LangGraph stream for message: {message.content[:50]}")
-      logger.info(f"[STREAM_DEBUG] Passing {len(tools)} tools to LangGraph: {[t.name for t in tools[:5]]}")
-      chunk_count = 0
       async for chunk in lg_client.stream_response(
         message=message.content,
         session_id=cl.context.session.id,

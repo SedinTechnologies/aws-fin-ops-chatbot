@@ -13,5 +13,6 @@ EXPOSE 8001 8002 8003 8004 8005
 
 ENV AWS_REGION="${AWS_REGION:-us-east-1}"
 ENV AWS_API_MCP_TRANSPORT="streamable-http"
+ENV UVICORN_LOG_LEVEL="debug"
 
 CMD ["honcho", "start"]
