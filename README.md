@@ -112,13 +112,12 @@ You should see `chainlit-ui`, `redis`, `mcp-servers`, `postgres` and `localstack
 
 ### 6. Create a Chainlit Login User (Redis Authentication)
 
-By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN. Please replace the values of `USER_ID`, `DISPLAY_NAME`, `PASSWORD`, and `AWS_ROLE_ARN` accordingly and then run the following command:
+By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN. Please replace the values of `USER_ID`, `DISPLAY_NAME`, and `PASSWORD` accordingly and then run the following command:
 
    ```bash
    docker compose exec -it chainlit-ui bash -c "USER_ID='[USER_ID]' \
    DISPLAY_NAME='[DISPLAY_NAME]' \
    PASSWORD='[PASSWORD]' \
-   AWS_ROLE_ARN='[AWS_ROLE_ARN]' \
    python scripts/signup.py"
    ```
 

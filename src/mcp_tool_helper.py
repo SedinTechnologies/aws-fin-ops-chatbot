@@ -34,7 +34,6 @@ async def _setup_server(connection_meta: dict) -> tuple[dict, List[MCPToolEntry]
   name = connection_meta["name"]
 
   if name in MCP_CLIENT_CACHE:
-    logger.info(f"Reusing cached MCP client and tools for '{name}'")
     return MCP_CLIENT_CACHE[name]
 
   url = connection_meta.get('url')
