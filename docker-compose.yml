@@ -78,7 +78,6 @@ services:
       - secrets/azure-openai.env
       - secrets/chainlit.env
       - secrets/langgraph.env
-      - secrets/mcp-servers.env
       - secrets/guardrails.env
     volumes:
       - ./chainlit-config.toml:/app/.chainlit/config.toml

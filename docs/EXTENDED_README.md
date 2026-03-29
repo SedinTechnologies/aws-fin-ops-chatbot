@@ -75,13 +75,6 @@ The application uses several environment variables for configuration. These are 
 | `LANGGRAPH_RECURSION_LIMIT` | `langgraph.env` | `40` | Recursion limit |
 | `STREAMABLE_HTTP_READY_TIMEOUT` | `langgraph.env` | `25` | Streamable HTTP ready timeout (seconds) |
 | `STREAMABLE_HTTP_READY_INITIAL_DELAY` | `langgraph.env` | `2` | Streamable HTTP ready initial delay (seconds) |
-| **MCP Servers** | | | |
-| `AWS_COST_EXPLORER_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for Cost Explorer MCP Server |
-| `AWS_CCAPI_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for CCAPI MCP Server |
-| `AWS_CLOUDWATCH_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for CloudWatch MCP Server |
-| `AWS_BILLING_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for Billing MCP Server |
-| `AWS_CLOUDTRAIL_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for CloudTrail MCP Server |
-| `AWS_PRICING_MCP_SERVER_VERSION` | `mcp-servers.env` | `latest` | Version for Pricing MCP Server |
 
 ---
 
