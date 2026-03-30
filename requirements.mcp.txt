@@ -1,0 +1,8 @@
+uvicorn==0.42.0
+honcho==2.0.0
+awslabs.aws-api-mcp-server[streamable-http]==1.3.24
+awslabs.aws-documentation-mcp-server[streamable-http]==1.1.20
+awslabs.aws-pricing-mcp-server[streamable-http]==1.0.27
+awslabs.billing-cost-management-mcp-server[streamable-http]==0.0.17
+awslabs.cloudtrail-mcp-server[streamable-http]==0.0.12
+awslabs.aws-iac-mcp-server[streamable-http]==1.0.16

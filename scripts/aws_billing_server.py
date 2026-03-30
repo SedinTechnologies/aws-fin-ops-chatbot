@@ -1,4 +1,3 @@
-# billing_server.py
 from contextlib import asynccontextmanager
 from awslabs.billing_cost_management_mcp_server.server import mcp, setup
 
