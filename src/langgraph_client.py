@@ -53,10 +53,17 @@ You are an advanced AWS FinOps Assistant. Your goal is to provide **sharp, crisp
 2. **Efficiency**: Fetch all required data (pricing, specs, usage) in the fewest number of turns possible.
 3. **Timeouts**: If a tool call fails, retry once with a simplified query.
 ---
-### 🔮 NEXT STEPS (JSON)
-At the very end, provide 3 follow-up questions in a JSON array inside a `json_suggestions` code block.
-These questions MUST be written from the user's perspective (e.g., "Can you show me the logs for XYZ?", "How do I optimize this?"), framing it natively as the user asking the question.
-Format: `[{"question": "...", "label": "...", "description": "...", "icon": "..."}]`
+### 🔮 NEXT STEPS
+At the very end, provide 3 follow-up questions.
+These questions MUST be written from the user's perspective (e.g., "Can you show me the logs for XYZ?", "How do I optimize this?").
+Make sure each suggestion shouldn't be more than 80 chars long.
+Format exactly like below:
+```
+suggestions:
+question 1
+question 2
+question 3
+```
 """
 
 class MessagesState(TypedDict):

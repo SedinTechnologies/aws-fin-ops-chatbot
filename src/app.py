@@ -158,51 +158,37 @@ async def new_message(message: cl.Message):
       if isinstance(chunk, str):
         await response_message.stream_token(chunk)
 
-    await response_message.send()
-
     # Post-processing for suggestions
     content = response_message.content
 
-    # Matches 'json_suggestions' or '```json_suggestions' at the start of a line or after a newline
-    start_pattern = r"(?:(?:\n|^)json_suggestions|```json_suggestions)"
-    match = re.search(start_pattern, content)
+    # Matches 'suggestions:' or '```suggestions' at the start of a line or after a newline
+    start_pattern = r"(?:(?:\n|^)suggestions:?|```suggestions)"
+    match = re.search(start_pattern, content, flags=re.IGNORECASE)
 
     if match:
-      # Extract the potential block from the match start to the end of the string
       block = content[match.start():]
+      lines = block.split('\n')
 
-      # Try to extract JSON from the block
-      json_match = re.search(r"(\[\s*\{[\s\S]*)", block)
-      if json_match:
-        json_text = json_match.group(1)
-        # Remove potential closing backticks if present
-        json_text = re.sub(r"\s*```\s*$", "", json_text)
+      for line in lines[1:]:  # skip the matched header line
+        question = line.strip()
+        # skip empty lines, backticks, or 'suggestions:' headers
+        if not question or question.startswith('```') or question.lower().startswith('suggestions'):
+          continue
 
-        try:
-          suggestions = json.loads(json_text)
-          actions = []
-          for s in suggestions:
-            label = s.get("label", s.get("question")[:20])
-            description = s.get("description")
-            if description:
-              label = f"{label} - {description}"
+        # Strip potential list markers (e.g., "1. ", "- ", "* ")
+        question = re.sub(r'^(?:-|\*|\d+\.)\s+', '', question)
 
-            actions.append(
-              cl.Action(
-                name="next_question_click",
-                icon=s.get("icon", "👉"),
-                label=label,
-                payload={"question": s.get("question")}
-              )
-            )
-          response_message.actions = actions
-        except json.JSONDecodeError:
-          # JSON is likely truncated or malformed
-          pass
+        response_message.actions.append(
+          cl.Action(
+            name="next_question_click",
+            label=question,
+            payload={"question": question}
+          )
+        )
 
-      # ALWAYS strip the matched block from the content to prevent raw text leakage
+      # Strip the matched suggestions block from the content
       response_message.content = content[:match.start()].strip()
-      await response_message.update()
+    await response_message.send()
 
   except GuardrailViolation as violation:
     logger.warning(
