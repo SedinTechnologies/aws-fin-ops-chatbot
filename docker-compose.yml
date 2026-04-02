@@ -22,6 +22,7 @@ services:
     profiles: ["db"]
     depends_on:
       - postgres
+    image: aws-finops-bot:data-migration
     build:
       context: .
       dockerfile: prisma.Dockerfile
@@ -41,6 +42,7 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
 
   mcp-servers:
+    image: aws-finops-bot:mcp-servers
     build:
       context: .
       dockerfile: Dockerfile.mcp
@@ -70,6 +72,7 @@ services:
         condition: service_started
       mcp-servers:
         condition: service_healthy
+    image: aws-finops-bot:chainlit-ui
     build:
       context: ./
     ports:
