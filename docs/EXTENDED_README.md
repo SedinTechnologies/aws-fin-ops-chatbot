@@ -70,7 +70,6 @@ The application uses several environment variables for configuration. These are 
 | `TOOL_RATE_LIMITS_JSON` | `guardrails.env` | `[]` | JSON for per-tool limits |
 | `BUDGET_POLICY_JSON` | `guardrails.env` | `{}` | JSON for budget policy |
 | **LangGraph Config** | | | |
-| `ENABLE_LANGGRAPH` | `langgraph.env` | `true` | Enable LangGraph |
 | `LANGGRAPH_MAX_TOOL_LOOPS` | `langgraph.env` | `60` | Max tool loops |
 | `LANGGRAPH_RECURSION_LIMIT` | `langgraph.env` | `40` | Recursion limit |
 | `STREAMABLE_HTTP_READY_TIMEOUT` | `langgraph.env` | `25` | Streamable HTTP ready timeout (seconds) |
