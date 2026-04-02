@@ -111,6 +111,8 @@ async def on_chat_resume(thread: ThreadDict):
   try:
     tools = await get_configured_mcp_tools(user)
     client = LangGraphClient(tools=tools)
+    if memory:
+      client.load_historical_messages(cl.context.session.id, memory)
   except Exception as e:
     logger.error(f"Failed to initialize LangGraph client on resume: {e}")
     client = None

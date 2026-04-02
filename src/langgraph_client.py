@@ -77,6 +77,19 @@ class LangGraphClient:
     self.checkpointer = MemorySaver()
     self._app = self._graph.compile(checkpointer=self.checkpointer)
 
+  def load_historical_messages(self, session_id: str, messages: List[dict]):
+    config = { "configurable": { "thread_id": session_id } }
+    langchain_messages = []
+    from langchain_core.messages import AIMessage, HumanMessage
+    for msg in messages:
+      if msg["role"] == "user":
+        langchain_messages.append(HumanMessage(content=msg["content"]))
+      elif msg["role"] == "assistant":
+        langchain_messages.append(AIMessage(content=msg["content"]))
+
+    if langchain_messages:
+      self._app.update_state(config, {"messages": langchain_messages})
+
   def _init_llm(self) -> AzureChatOpenAI:
     llm_kwargs = {
       "azure_deployment": os.environ["AZURE_OPENAI_MODEL"],
