@@ -191,7 +191,7 @@ async def new_message(message: cl.Message):
 
       # Strip the matched suggestions block from the content
       response_message.content = content[:match.start()].strip()
-    await response_message.send()
+    await response_message.update()
 
   except GuardrailViolation as violation:
     logger.warning(

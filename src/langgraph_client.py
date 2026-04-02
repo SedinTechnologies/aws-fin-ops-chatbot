@@ -161,17 +161,10 @@ class LangGraphClient:
         yield str(e)
         return
 
-    # Stream events using astream (values mode) to avoid pickling issues with astream_events
-    last_content = ""
-    async for event in self._app.astream(inputs, config=config, stream_mode="values"):
-      messages = event.get("messages", [])
-      if not messages:
-        continue
-
-      last_message = messages[-1]
-
-      # Yield full content of final AI message if it has changed, ignoring tool calls
-      if last_message.type == "ai" and last_message.content and not getattr(last_message, 'tool_calls', None):
-        if last_message.content != last_content:
-          yield last_message.content
-          last_content = last_message.content
+    # Stream events using astream (messages mode) to get token-level streaming
+    async for msg, metadata in self._app.astream(inputs, config=config, stream_mode="messages"):
+      # Only stream from the agent node to avoid echoing tool outputs
+      if metadata.get("langgraph_node") == "agent":
+        # Yield only string content chunks
+        if msg.content and isinstance(msg.content, str):
+          yield msg.content
