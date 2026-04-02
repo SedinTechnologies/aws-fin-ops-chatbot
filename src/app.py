@@ -150,6 +150,7 @@ async def new_message(message: cl.Message):
     logger.debug(f"Loaded {len(tools)} MCP tools for LangGraph")
 
     response_message = cl.Message(content="")
+    await response_message.stream_token(" ")
 
     async for chunk in client.stream_response(
       message=message.content,
