@@ -1,15 +1,15 @@
-import redis, logging, random, traceback, json, re
+import redis, logging, random, traceback, re
 
 import chainlit as cl
 from chainlit.types import ThreadDict
 from chainlit.data import chainlit_data_layer
 
 from date_utils import LenientDatetime
-from mcp_tool_helper import (
+from mcp_utils import (
   fetch_registered_mcp_tools_for_user,
-  get_configured_mcp_tools
+  get_configured_mcp_tools,
+  enabled_mcp_connections_list
 )
-from mcp_utils import enabled_mcp_connections_list
 from langgraph_client import LangGraphClient
 from session_store import RedisSessionStore
 from auth_manager import AuthManager
