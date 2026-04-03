@@ -1,0 +1,11 @@
+aws-api: uvicorn --factory awslabs.aws_api_mcp_server.server:server.http_app --host 0.0.0.0 --port 8000
+
+aws-docs: uvicorn --factory awslabs.aws_documentation_mcp_server.server_aws:mcp.streamable_http_app --host 0.0.0.0 --port 8001
+
+pricing: uvicorn --factory awslabs.aws_pricing_mcp_server.server:mcp.streamable_http_app --host 0.0.0.0 --port 8002
+
+billing: uvicorn --factory aws_billing_server:create_app --host 0.0.0.0 --port 8003
+
+cloudtrail: uvicorn --factory awslabs.cloudtrail_mcp_server.server:mcp.streamable_http_app --host 0.0.0.0 --port 8004
+
+aws-iac: uvicorn --factory awslabs.aws_iac_mcp_server.server:mcp.http_app --host 0.0.0.0 --port 8005

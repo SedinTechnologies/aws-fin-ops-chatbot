@@ -18,18 +18,18 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
-  # Only run this when you're running for the first time
-  # Otherwise, we don't need to run it always. Just used for data migration.
-  # data-migration:
-  #   build:
-  #     context: .
-  #     dockerfile: prisma.Dockerfile
-  #   depends_on:
-  #     - postgres
-  #   volumes:
-  #     - ./prisma/:/app/
-  #   environment:
-  #     - DATABASE_URL=postgresql://root:root@postgres:5432/postgres
+  data-migration:
+    profiles: ["db"]
+    depends_on:
+      - postgres
+    image: aws-finops-bot:data-migration
+    build:
+      context: .
+      dockerfile: prisma.Dockerfile
+    volumes:
+      - ./prisma/:/app/
+    environment:
+      - DATABASE_URL=postgresql://root:root@postgres:5432/postgres
 
   localstack:
     image: localstack/localstack:4.10.0
@@ -41,26 +41,51 @@ services:
       - ./localstack-s3-setup.sh:/etc/localstack/init/ready.d/script.sh
       - "/var/run/docker.sock:/var/run/docker.sock"
 
+  mcp-servers:
+    image: aws-finops-bot:mcp-servers
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    env_file:
+      - secrets/aws.env
+    ports:
+      - "8001:8001"
+      - "8002:8002"
+      - "8003:8003"
+      - "8004:8004"
+      - "8005:8005"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; [socket.create_connection(('localhost', p), timeout=2).close() for p in range(8001, 8006)]"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   chainlit-ui:
     platform: linux/arm64
     depends_on:
-      - redis
-      - postgres
-      - localstack
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_started
+      localstack:
+        condition: service_started
+      mcp-servers:
+        condition: service_healthy
+    image: aws-finops-bot:chainlit-ui
     build:
       context: ./
     ports:
       - "8000:8000"
     env_file:
-      - azure-openai.env
-      - chainlit.env
-      - langgraph.env
-      - mcp-servers.env
-      - guardrails.env
+      - secrets/azure-openai.env
+      - secrets/chainlit.env
+      - secrets/langgraph.env
+      - secrets/guardrails.env
     volumes:
       - ./chainlit-config.toml:/app/.chainlit/config.toml
       # Need to mount aws env file to give access to MCP servers
-      - ./aws.env:/app/aws.env
+      - ${PWD}/secrets/aws.env:/app/aws-creds.env:ro
       # Development purposes
       - ./src:/app/src
       - ./scripts:/app/scripts

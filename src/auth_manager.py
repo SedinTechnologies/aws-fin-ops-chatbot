@@ -5,9 +5,6 @@ class AuthManager:
   def __init__(self, store: SessionStore):
     self.store = store
 
-  def hash_password(self, plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
-
   def verify_password(self, plain: str, hashed: str) -> bool:
     try:
       return bcrypt.checkpw(plain.encode(), hashed.encode())

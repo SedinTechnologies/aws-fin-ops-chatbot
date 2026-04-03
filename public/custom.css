@@ -107,6 +107,8 @@ button.cl-button {
   flex: 1 1 100%;
   order: 1;
   /* Style the suggestion buttons */
+  white-space: normal;
+  height: auto;
   background-color: #f1f5f9;
   color: #475569;
   border: 1px solid #cbd5e1;

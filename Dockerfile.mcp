@@ -1,0 +1,19 @@
+FROM python:3.13.12-slim
+
+WORKDIR /app
+
+COPY requirements.mcp.txt ./
+
+RUN pip install --no-cache-dir -r requirements.mcp.txt \
+  && rm -rf /var/cache/apt/*
+
+COPY Procfile.mcp ./Procfile
+
+COPY scripts/aws_billing_server.py /app/aws_billing_server.py
+
+EXPOSE 8000 8001 8002 8003 8004 8005
+
+ENV AUTH_TYPE="no-auth"
+ENV AWS_API_MCP_TRANSPORT="streamable-http"
+
+CMD ["honcho", "start"]

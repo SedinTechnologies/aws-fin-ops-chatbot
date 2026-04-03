@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>AWS FinOps Bot</h1>
+  <h1>AwsFinOpsBot</h1>
   <p><strong>An AI-driven assistant built to analyze AWS billing, optimize costs, and track resource usage.</strong></p>
 </div>
 
@@ -7,19 +7,20 @@
 
 ## 📖 Overview
 
-**AWS FinOps Bot** combines the power of **Azure OpenAI** with real AWS data from **Cost Explorer** and the **Cloud Control API**. Built on top of a robust **LangGraph** orchestration framework and using **MCP (Model Context Protocol) servers**, the bot provides interactive, strictly domain-bound insights into your cloud infrastructure via a sleek **Chainlit** web UI.
+**AwsFinOpsBot** combines the power of **Azure OpenAI** with a comprehensive suite of **AWS MCP (Model Context Protocol) servers** to seamlessly retrieve real-time AWS API telemetry, billing metrics, pricing data, CloudTrail audits, and Infrastructure as Code (IaC) configurations. Built on top of a robust **LangGraph** orchestration workflow, the bot provides interactive, strictly domain-bound insights into your cloud infrastructure via a sleek **Chainlit** web UI.
 
-Whether you want to analyze spending trends, find unutilized resources, or set up customizable cost guardrails, the FinOps bot handles it natively and securely.
+Whether you want to analyze deep spending trends, correlate CloudWatch metrics to find unutilized resources, review security audits, or set up customizable cost guardrails, the AwsFinOpsBot handles it natively and securely.
 
-![AWS FinOps Bot Architecture](docs/aws_finops_architecture.png)
+![Architecture](docs/architecture.png)
 
 ### 🌟 Key Features
 
-* **AWS Billing & Cost Analytics**: Break down costs by service, region, tags, or usage type. Instantly detect monthly spend trends and anomalies.
-* **AWS Resource Usage Insights**: Fetch resource inventory summaries and identify underutilized or abandoned provisions.
-* **Strict Domain-Bound Guardrails**: The bot enforces strict policies to politely reject non-AWS domain queries. Easily restrict access via Account/Service allowlists and enforce rate limits.
-* **Interactive Chat UI**: Smart follow-up suggestions, rich Markdown formatting, and easy-to-use action buttons, perfectly persisted via PostgreSQL & Redis.
-* **Dockerized for Quick Setup**: With **Localstack** emulating S3 storage exclusively for Chainlit persistence (while all MCP servers query your real AWS account) and a simple **docker-compose** setup, a local application can be spun up in minutes.
+* **Deep AWS API Integrations**: Broad coverage across the AWS ecosystem using specialized MCP servers like the API, Pricing, and Documentation tools.
+* **AWS Billing & Cost Management**: Break down costs by service, region, and tags. Instantly detect monthly spend trends, budget overages, and savings plans optimizations.
+* **Security & Infrastructure Audits**: Access CloudTrail logs for auditing historical user events and query IaC configurations for compliance.
+* **Strict Domain-Bound Guardrails**: The bot enforces strict filtering policies to automatically reject non-AWS domain queries. Easily restrict query scopes via Account/Service allowlists.
+* **Interactive Chat UI**: Features fluid response streaming, rich Markdown formatting, and smart, quick-action follow-up suggestions for deeper investigation.
+* **Dockerized for Quick Setup**: With **Localstack** emulating S3 storage exclusively for Chainlit persistence (while all MCP servers securely query your real AWS account), a local application can be spun up in minutes using `docker-compose`.
 
 ---
 
@@ -37,109 +38,86 @@ Follow these steps to get a local development environment running quickly so you
 Clone the project to your local machine and navigate into the directory:
 
 ```bash
-git clone <repo-url>
-cd aws-finops-bot
+git clone --depth 1 https://github.com/SedinTechnologies/aws-fin-ops-chatbot.git
+cd aws-fin-ops-chatbot
 ```
 
-### 2. Configure AWS IAM Role & Credentials
+### 2. Configure AWS IAM Credentials
 
 The bot requires an AWS IAM Role (or User) with specific permissions to query your AWS environment.
 
-1. **Create an IAM User (or Role)** in your AWS console (e.g., `aws-finops-bot-user`).
+1. **Create an IAM User or Role** in your AWS console.
 2. **Attach Policies** to the user/role to grant appropriate access:
-   * **`ReadOnlyAccess`** (AWS Managed Policy): Required for the Cloud Control API, CloudWatch, Billing, CloudTrail, and Pricing MCP servers to read resource configurations and metrics.
-   * **Cost Explorer Access**: Required for the Cost Explorer MCP server. You can attach the `AWSBillingReadOnlyAccess` managed policy or create an inline policy with the following permissions:
+   * Each MCP server requires distinct AWS IAM permissions. Please refer to the official documentation for the minimum required policies or attach appropriate managed policies:
+     * [AWS API MCP Server Permissions](https://awslabs.github.io/mcp/servers/aws-api-mcp-server#-credential-management-and-access-control)
+     * [AWS Pricing MCP Server Permissions](https://awslabs.github.io/mcp/servers/aws-pricing-mcp-server#prerequisites)
+     * [AWS Billing & Cost Management MCP Server Permissions](https://awslabs.github.io/mcp/servers/billing-cost-management-mcp-server#aws-authentication)
+     * [AWS CloudTrail MCP Server Permissions](https://awslabs.github.io/mcp/servers/cloudtrail-mcp-server#required-iam-permissions)
+     * [AWS IaC MCP Server Permissions](https://awslabs.github.io/mcp/servers/aws-iac-mcp-server#iam-permissions)
 
-     ```json
-     {
-       "Version": "2012-10-17",
-       "Statement": [
-         {
-           "Effect": "Allow",
-           "Action": [
-             "ce:GetCostAndUsage",
-             "ce:GetCostForecast",
-             "ce:GetDimensionValues",
-             "ce:GetTags"
-           ],
-           "Resource": "*"
-         }
-       ]
-     }
+3. **Configure Authentication Credentials**:
+   * **If using an IAM User**: Generate an Access Key in the AWS Console. Open the `aws.env` file in the [secrets](secrets/) directory and add your credentials:
+
+     ```env
+     AWS_ACCESS_KEY_ID=your_access_key_here
+     AWS_SECRET_ACCESS_KEY=your_secret_key_here
      ```
 
-3. **Generate an Access Key** for this IAM User (or obtain credentials for the Role).
-4. **Update Configuration**: Add the generated Access Key ID and Secret Access Key to the `aws.env` file in the root of the repository:
-
-   ```env
-   AWS_ACCESS_KEY_ID=your_access_key_here
-   AWS_SECRET_ACCESS_KEY=your_secret_key_here
-   ```
+   * **If using an IAM Role (e.g., EC2 Instance Profile / ECS Task Role)**: The application will automatically inherit the IAM credentials from the compute environment. You can remove them from `aws.env` secrets file entirely.
+   * **Note**: In both cases, ensure that your `AWS_DEFAULT_REGION` is correctly set in `aws.env`.
 
 ### 3. Configure Other Environment Variables
 
 The application relies on several other environment files (`azure-openai.env`, `chainlit.env`, etc.). You must provide the correct keys/values before proceeding.
 
-* 👉 **[See the Complete Detailed list of Environment Variables inside docs/EXTENDED_README.md](docs/EXTENDED_README.md#environment-variables)**
+> 📖 **Note:** For a comprehensive breakdown of all required configurations, see the **[Extended README](docs/EXTENDED_README.md)** documentation.
 
 ### 4. Prepare the Database Migrations
 
 Set up your PostgreSQL database using the built-in Chainlit datalayer migrations:
 
-1. Open `docker-compose.yml` and **uncomment** the `data-migration` service code.
-2. Build and run the migration containers:
+1. Start the `data-migration` service which will run the migrations required for the Chainlit datalayer:
 
    ```bash
-   docker compose up postgres data-migration --build
+   docker compose up data-migration
    ```
 
-3. Wait for the migrations to complete successfully in your terminal logs.
-4. Stop the docker compose process (e.g., using `Ctrl+C`).
-5. **Re-comment** the `data-migration` service code in `docker-compose.yml`.
+2. After the data migration container exists, please check for the success message in the terminal logs to confirm that the migrations have completed successfully.
 
-### 5. Create a Chainlit Login User (Redis Authentication)
+### 5. Start the Application
 
-By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user with an associated AWS Role ARN.
+Start the full stack (Chainlit App, PostgreSQL, Redis, MCP Servers, and Localstack) in the background:
 
-1. Ensure the **Redis container** is running, or start it explicitly:
+  ```bash
+  docker compose up --build -d
+  ```
 
-   ```bash
-   docker compose up -d redis
-   ```
-
-2. Modify the user details at the bottom of `scripts/signup.py` (username, name, password, and the AWS Role ARN you created in Step 2):
-
-   ```python
-   # Example in scripts/signup.py
-   store_user("your-username", "Your Name", "SecurePassword!", "arn:aws:iam::123456789012:role/aws-finops-bot-user")
-   ```
-
-3. Run the script:
-
-   ```bash
-   pip install redis bcrypt
-   python scripts/signup.py
-   ```
-
-   *(The user credentials will be securely hashed and stored in Redis).*
-
-### 6. Start the Application
-
-Start the full stack (Chainlit App, PostgreSQL, Redis, and Localstack) in the background:
+Ensure all the services are running. You can check the status of the services by running the following command:
 
 ```bash
-docker compose up --build
+docker compose ps
 ```
 
-*(Optional) You can customize the MCP default versions at build time:*
+You should see `chainlit-ui`, `redis`, `mcp-servers`, `postgres`, and `localstack` services running. If not, please troubleshoot the issue by checking the logs of the respective services.
 
-```bash
-docker compose build --build-arg AWS_COST_EXPLORER_MCP_SERVER_VERSION=0.2.0
-docker compose up
-```
+### 6. Create a Chainlit Login User (Redis Authentication by default)
 
-Once the containers are successfully running, visit:
-**🔗 [http://localhost:8000](http://localhost:8000)**
+By default, the application enforces login through Chainlit, authenticating against a Redis backend. We provide a `scripts/signup.py` script to generate a user. Please replace the values of `USER_ID`, `DISPLAY_NAME`, and `PASSWORD` accordingly and then run the following command:
+
+   ```bash
+   docker compose exec -it chainlit-ui bash -c "USER_ID='[USER_ID]' \
+   DISPLAY_NAME='[DISPLAY_NAME]' \
+   PASSWORD='[PASSWORD]' \
+   python scripts/signup.py"
+   ```
+
+   Upon successful execution, you should see the following output:
+
+   ```text
+    Stored user user:[USER_ID] in Redis.
+   ```
+
+* You can now login into the application at: **🔗 [http://localhost:8000](http://localhost:8000)** and start chatting with the bot.
 
 ---
 
@@ -147,7 +125,5 @@ Once the containers are successfully running, visit:
 
 For any low-level details, we've organized everything in the `docs` folder. New developers are recommended to look through these resources once they have their local environment up and running.
 
-* **[Architecture, Environment Config & Troubleshooting](docs/EXTENDED_README.md)**: Deep dive into the flow, the exhagustive env var list, and common bug troubleshooting.
-* **[LangGraph Implementation](docs/langgraph_implementation_and_workflow.md)**: Understand the LangGraph workflow layout.
-* **[Available MCP Servers & Tooling](docs/available_mcp_tools.md)**: Discover all integrated tool definitions.
-* **[LangGraph Migration & Prototype](docs/langgraph_migration.md)**: Read the backstory and transition details for the underlying orchestration layer.
+* **[Architecture, Environment Config & Troubleshooting](docs/EXTENDED_README.md)**: Deep dive into the flow, the exhaustive env var list, and common bug troubleshooting.
+* **[LangGraph Implementation](docs/langgraph.md)**: Understand the LangGraph workflow process.
