@@ -47,26 +47,12 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
 
 1. **Create an IAM User (or Role)** in your AWS console (e.g., `aws-finops-bot-user`).
 2. **Attach Policies** to the user/role to grant appropriate access:
-   * **`ReadOnlyAccess`** (AWS Managed Policy): Required for the Cloud Control API, CloudWatch, Billing, CloudTrail, and Pricing MCP servers to read resource configurations and metrics.
-   * **Cost Explorer Access**: Required for the Cost Explorer MCP server. You can attach the `AWSBillingReadOnlyAccess` managed policy or create an inline policy with the following permissions:
-
-     ```json
-     {
-       "Version": "2012-10-17",
-       "Statement": [
-         {
-           "Effect": "Allow",
-           "Action": [
-             "ce:GetCostAndUsage",
-             "ce:GetCostForecast",
-             "ce:GetDimensionValues",
-             "ce:GetTags"
-           ],
-           "Resource": "*"
-         }
-       ]
-     }
-     ```
+   * Each MCP server requires distinct AWS IAM permissions. Please see the official documentation for the minimum required policies or attach appropriate managed policies (e.g., `ReadOnlyAccess`, `AWSBillingReadOnlyAccess`):
+     * [AWS API MCP Server Permissions](https://awslabs.github.io/mcp/servers/aws-api-mcp-server#-credential-management-and-access-control)
+     * [AWS Pricing MCP Server Permissions](https://awslabs.github.io/mcp/servers/aws-pricing-mcp-server#prerequisites)
+     * [AWS Billing & Cost Management MCP Server Permissions](https://awslabs.github.io/mcp/servers/billing-cost-management-mcp-server#aws-authentication)
+     * [AWS CloudTrail MCP Server Permissions](https://awslabs.github.io/mcp/servers/cloudtrail-mcp-server#required-iam-permissions)
+     * [AWS IaC MCP Server Permissions](https://awslabs.github.io/mcp/servers/aws-iac-mcp-server#iam-permissions)
 
 3. **Generate an Access Key** for this IAM User (or obtain credentials for the Role).
 4. **Update Configuration**: Add the generated Access Key ID and Secret Access Key to the `aws.env` file in the [secrets](secrets/) directory of the repository:

@@ -88,8 +88,8 @@ The application uses several environment variables for configuration. These are 
    - The request is processed by a `StateGraph` workflow.
    - The LLM decides whether to call tools or generate a response.
 5. If tools are needed, the LLM invokes the required **MCP servers**. Examples include:
-   - `aws-cost-explorer-mcp-server` → Queries Cost Explorer
-   - `aws-ccapi-mcp-server` → Queries Cloud Control API
+   - `aws-billing-cost-management-mcp-server` → Queries Billing data & Cost Explorer
+   - `aws-api-mcp-server` → Queries general AWS APIs (EC2, CloudWatch, etc.)
 6. MCP servers execute the underlying AWS requests and return structured results.
 7. The processed response is sent back to Chainlit, which **renders it in the UI**.
 8. **Local Development**:
@@ -115,12 +115,12 @@ The application uses several environment variables for configuration. These are 
 3. **Orchestration Layer (LangGraph)**: Manages state and coordinates tool-calling loops reliably. It ensures LLM context size and loops do not exceed limits.
 4. **LLM Engine (Azure OpenAI)**: Evaluates user queries and orchestrates the needed tool calls based on context, injecting interactive suggestions (buttons) on response completion.
 5. **Data Retrieval (MCP Servers)**: The system utilizes 6 specialized MCP servers to securely bridge the LLM with AWS:
-   - **Cost Explorer MCP**: Analyzes costs by dimension, tags, and forecasts.
-   - **Cloud Control API (CCAPI) MCP**: Enumerates running resource states.
-   - **CloudWatch MCP**: Retrieves operational metrics (e.g. CPU/Memory) to identify underutilization.
-   - **Billing MCP**: Fetches billing profiles and invoices.
-   - **CloudTrail MCP**: Audits historical events and resource modifications.
-   - **Pricing MCP**: Queries the AWS Price List API for expected resource costs.
+   - **AWS API MCP**: General-purpose direct interaction with any AWS service API (e.g. EC2, S3, CloudWatch, Cost Explorer).
+   - **AWS Documentation MCP**: Retrieves the most up-to-date AWS service documentation, limits, and best practices.
+   - **AWS Pricing MCP**: Queries the AWS Price List API for expected resource costs and comparisons.
+   - **AWS Billing & Cost Management MCP**: Fetches data related to Cost Explorer insights, invoices, budgets, and savings plans.
+   - **AWS CloudTrail MCP**: Audits historical events, user activity, and security investigations.
+   - **AWS IaC MCP**: Provides detailed Infrastructure as Code insights.
 
 ---
 
@@ -143,7 +143,7 @@ Below is a detailed walkthrough of how a typical user interaction unfolds within
 ### 3. Tool Execution & Data Stitching
 
 - **Step**: The LLM determines it needs data.
-- **Action**: It calls the `aws-cost-explorer-mcp-server` to fetch the 6-month trend. It then calls the `aws-cloudwatch-mcp-server` to check for low CPU utilization across instances, and `aws-pricing-mcp-server` to determine expected savings.
+- **Action**: It calls the `aws-billing-cost-management-mcp-server` to fetch the 6-month trend. It then calls the `aws-api-mcp-server` to check for low CPU utilization across instances, and `aws-pricing-mcp-server` to determine expected savings.
 - **Result**: Data is returned asynchronously back to the LangGraph node and interpreted by the LLM.
 
 ### 4. Interactive Response
@@ -174,14 +174,6 @@ docker compose ps
 ```
 
 - Ensure port `8000` is not in use.
-
-### MCP servers failing
-
-- Check your AWS credentials.
-- Ensure the MCP env vars still point to `127.0.0.1` (servers run inside the Chainlit container). If you override them, the hostname must exist on the Docker network or you must set `ENFORCE_LOCAL_MCP=false` and supply matching DNS.
-- For Localstack, confirm that endpoints are correctly configured.
-- If a streamable MCP takes a while to boot (e.g., first launch after pulling images), bump `STREAMABLE_HTTP_READY_TIMEOUT` (default `30s`) and optionally `STREAMABLE_HTTP_READY_INITIAL_DELAY` (default `1s`) so the readiness probe waits long enough before falling back to stdio.
-- Local development without the HTTP transport? Set `AWS_COST_EXPLORER_MCP_TRANSPORT=AWS_CCAPI_MCP_TRANSPORT=stdio` in `chainlit.env` to skip streamable startup entirely and avoid long login delays.
 
 ### Azure OpenAI errors
 

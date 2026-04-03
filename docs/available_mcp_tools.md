@@ -2,38 +2,39 @@
 
 The AWS FinOps Chatbot integrates with the following Model Context Protocol (MCP) servers to provide comprehensive AWS management capabilities.
 
-## 1. AWS Cost Explorer MCP Server
-*   **Package**: `awslabs.cost-explorer-mcp-server`
-*   **Port**: 8001
-*   **Purpose**: Provides access to AWS Cost Explorer API for analyzing cost and usage data.
-*   **Key Tools**: `get_cost_and_usage`, `get_dimension_values`.
+## 1. AWS API MCP Server
 
-## 2. AWS Cloud Control API (CCAPI) MCP Server
-*   **Package**: `awslabs.ccapi-mcp-server`
-*   **Port**: 8002
-*   **Purpose**: Enables management of AWS resources using the Cloud Control API standard.
-*   **Key Tools**: `get_resource`, `list_resources`, `update_resource`.
+* **Package**: `aws-api-mcp-server`
+* **Port**: 8000
+* **Purpose**: General-purpose direct interaction with any AWS service API.
+* **Key Capabilities**: Reading resource configurations, executing operational commands, and querying service-specific data across the AWS ecosystem (e.g., EC2, S3, Lambda, ECS, CloudWatch).
 
-## 3. AWS CloudWatch MCP Server
-*   **Package**: `awslabs.cloudwatch-mcp-server`
-*   **Port**: 8003
-*   **Purpose**: Access to CloudWatch metrics and logs for monitoring resource performance.
-*   **Key Tools**: `get_metric_data`, `list_metrics`.
+## 2. AWS Documentation MCP Server
+
+* **Package**: `aws-documentation-mcp-server`
+* **Port**: 8001
+* **Purpose**: Retrieves the most up-to-date AWS service documentation, limits, and best practices.
+
+## 3. AWS Pricing MCP Server
+
+* **Package**: `aws-pricing-mcp-server`
+* **Port**: 8002
+* **Purpose**: Access to AWS Price List API for retrieving service pricing information and cost comparisons.
 
 ## 4. AWS Billing & Cost Management MCP Server
-*   **Package**: `awslabs.billing-cost-management-mcp-server`
-*   **Port**: 8004
-*   **Purpose**: Access to billing data, including invoices and budget information.
-*   **Key Tools**: `list_bill_estimates`, `get_budget_details`.
+
+* **Package**: `aws-billing-cost-management-mcp-server`
+* **Port**: 8003
+* **Purpose**: Access to billing data, Cost Explorer insights, invoices, budgets, and savings plans.
 
 ## 5. AWS CloudTrail MCP Server
-*   **Package**: `awslabs.cloudtrail-mcp-server`
-*   **Port**: 8005
-*   **Purpose**: Access to CloudTrail events for auditing and security analysis.
-*   **Key Tools**: `lookup_events`.
 
-## 6. AWS Pricing MCP Server
-*   **Package**: `awslabs.aws-pricing-mcp-server`
-*   **Port**: 8006
-*   **Purpose**: Access to AWS Price List API for retrieving service pricing information.
-*   **Key Tools**: `get_products`, `get_attribute_values`.
+* **Package**: `aws-cloudtrail-mcp-server`
+* **Port**: 8004
+* **Purpose**: Access to CloudTrail events for auditing, user activity, and security analysis.
+
+## 6. AWS IaC MCP Server
+
+* **Package**: `aws-iac-mcp-server`
+* **Port**: 8005
+* **Purpose**: Provides detailed Infrastructure as Code insights.
