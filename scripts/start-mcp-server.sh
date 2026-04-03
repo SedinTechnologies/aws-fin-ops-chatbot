@@ -17,7 +17,7 @@ export AWS_SECRET_ACCESS_KEY="$(echo "$CREDS" | jq -r '.SecretAccessKey')"
 export AWS_SESSION_TOKEN="$(echo "$CREDS" | jq -r '.SessionToken')"
 
 echo "Starting MCP server with uvicorn for streamable-http..." >&2
-echo "DEBUG: AWS_REGION=${AWS_REGION}" >&2
+echo "DEBUG: AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}" >&2
 # Extract package name from args (assumes format package@version or package[extra]@version)
 PACKAGE_ARG="$1"
 shift
@@ -43,5 +43,5 @@ exec env \
   AWS_API_MCP_URL="${MCP_SERVER_URL}" \
   AWS_API_MCP_ALLOWED_HOSTS="${MCP_SERVER_HOST}" \
   AWS_API_MCP_ALLOWED_ORIGINS="${MCP_SERVER_URL}" \
-  AWS_REGION="${AWS_REGION:-us-east-1}" \
+  AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}" \
   uvx --verbose --with "$WITH_ARG" uvicorn --factory "$MCP_SERVER_ASGI_APP" --host "$MCP_SERVER_HOST" --port "$MCP_SERVER_PORT"

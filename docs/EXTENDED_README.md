@@ -1,6 +1,6 @@
-# AWS FinOps Bot - Detailed Documentation
+# AwsFinOpsBot - Extended Documentation
 
-This document contains detailed information regarding the configuration, architecture, and troubleshooting of the AWS FinOps Bot.
+This document contains detailed information regarding the configuration, architecture, and troubleshooting of the AwsFinOpsBot.
 
 For a high-level overview and basic setup instructions, please see the [main README](../README.md).
 
@@ -16,15 +16,16 @@ For a high-level overview and basic setup instructions, please see the [main REA
 
 ## Guardrails
 
-The bot enforces configurable guardrails to keep every session within allowed AWS-finops scope. Key capabilities:
+The bot enforces configurable guardrails to keep every session within the strictly allowed AWS FinOps scope. Key capabilities:
 
-- **Account/Service allowlists:** restrict requests to specific AWS accounts or services.
-- **Time-window limits:** block queries that exceed maximum lookback or forecast windows.
-- **Tool rate limiting:** per-tool call limits to prevent excessive downstream usage.
-- **Content scanning:** lightweight keyword detection on user input, tool output, and model responses.
-- **Auditing:** structured JSON lines written to the path in `GUARDRAIL_AUDIT_LOG`.
+- **Account/Service Allowlists:** Restricts requests to specific AWS accounts (`ALLOWED_AWS_ACCOUNTS`) or services (`ALLOWED_AWS_SERVICES`).
+- **Time-Window Limits:** Blocks queries that exceed maximum lookback (`MAX_LOOKBACK_DAYS`) or forecast (`MAX_FORECAST_DAYS`) windows.
+- **Budget Enforcements:** Rejects queries if the inferred session cost violates the `BUDGET_POLICY_JSON` configuration.
+- **Tool Rate Limiting:** Enforces maximum calls per seconds limits (`TOOL_RATE_LIMITS_JSON`) to prevent excessive iterative downstream usage.
+- **Content Scanning:** Employs lightweight detection logic preventing sensitive terminology or injection-related requests (e.g. `password`, `secret access key`, `drop table`) on user inputs, tool outputs, and LLM responses.
+- **Auditing:** Emits formal, structured JSON lines tracking all guardrail invocations to the designated `GUARDRAIL_AUDIT_LOG` path.
 
-Set `TOOL_RATE_LIMIT_MODE` to control enforcement: `enforce` (block requests), `warn` (log but continue), or `off` (disable rate limiting). The sample `chainlit.env` defaults to `warn` so development sessions are not interrupted even when a tool is called repeatedly.
+Set `TOOL_RATE_LIMIT_MODE` inside `guardrails.env` to control enforcement: `enforce` (strictly block requests), `warn` (log warning but continue), or `off` (completely disable rate limiting). The sample `guardrails.env` defaults to `warn` so that local development and testing sessions are not actively interrupted even when iterative loop tools fire repeatedly.
 
 ---
 
@@ -43,7 +44,7 @@ The application uses several environment variables for configuration. These are 
 | **AWS Credentials** | | | |
 | `AWS_ACCESS_KEY_ID` | `aws.env` | - | **Secret**: AWS Access Key ID |
 | `AWS_SECRET_ACCESS_KEY` | `aws.env` | - | **Secret**: AWS Secret Access Key |
-| `AWS_REGION` | `aws.env` | `us-east-1` | AWS Region for App |
+| `AWS_DEFAULT_REGION` | `aws.env` | `us-east-1` | Default AWS Region selection |
 | **Chainlit Config** | | | |
 | `CHAINLIT_HOST` | `chainlit.env` | `0.0.0.0` | Host for Chainlit server |
 | `CHAINLIT_PORT` | `chainlit.env` | `8000` | Port for Chainlit server |
@@ -68,7 +69,7 @@ The application uses several environment variables for configuration. These are 
 | `MAX_FORECAST_DAYS` | `guardrails.env` | `90` | Max forecast days |
 | `TOOL_RATE_LIMIT_MODE` | `guardrails.env` | `warn` | Rate limit mode: `enforce`, `warn`, `off` |
 | `TOOL_RATE_LIMITS_JSON` | `guardrails.env` | `[]` | JSON for per-tool limits |
-| `BUDGET_POLICY_JSON` | `guardrails.env` | `{}` | JSON for budget policy |
+| `BUDGET_POLICY_JSON` | `guardrails.env` | `{}` | JSON configuration for budget enforcement via `monthly_limit_usd` |
 | **LangGraph Config** | | | |
 | `LANGGRAPH_MAX_TOOL_LOOPS` | `langgraph.env` | `60` | Max tool loops |
 | `LANGGRAPH_RECURSION_LIMIT` | `langgraph.env` | `40` | Recursion limit |
@@ -108,19 +109,19 @@ The application uses several environment variables for configuration. These are 
 
 ## Detailed Architecture & Data Flow
 
-![AWS FinOps Bot Architecture](./aws_finops_architecture.png)
+![Architecture](./architecture.png)
 
 1. **User Interface (Chainlit)**: The entry point for FinOps analysts and developers.
 2. **Persistence & Auth**: PostgreSQL stores conversation history (managed by Chainlit Datalayer), while Redis handles fast user-authentication tracking.
 3. **Orchestration Layer (LangGraph)**: Manages state and coordinates tool-calling loops reliably. It ensures LLM context size and loops do not exceed limits.
 4. **LLM Engine (Azure OpenAI)**: Evaluates user queries and orchestrates the needed tool calls based on context, injecting interactive suggestions (buttons) on response completion.
 5. **Data Retrieval (MCP Servers)**: The system utilizes 6 specialized MCP servers to securely bridge the LLM with AWS:
-   - **AWS API MCP**: General-purpose direct interaction with any AWS service API (e.g. EC2, S3, CloudWatch, Cost Explorer).
-   - **AWS Documentation MCP**: Retrieves the most up-to-date AWS service documentation, limits, and best practices.
-   - **AWS Pricing MCP**: Queries the AWS Price List API for expected resource costs and comparisons.
-   - **AWS Billing & Cost Management MCP**: Fetches data related to Cost Explorer insights, invoices, budgets, and savings plans.
-   - **AWS CloudTrail MCP**: Audits historical events, user activity, and security investigations.
-   - **AWS IaC MCP**: Provides detailed Infrastructure as Code insights.
+   - **[AWS API MCP Server](https://awslabs.github.io/mcp/servers/aws-api-mcp-server)**: General-purpose direct interaction with any AWS service API. Highly capable of reading resource configurations, executing operational commands, and querying domain-specific services like EC2, S3, or CloudWatch endpoints.
+   - **[AWS Documentation MCP Server](https://awslabs.github.io/mcp/servers/aws-documentation-mcp-server)**: Retrieves the most up-to-date AWS service documentation, API limits, and architecture best practices.
+   - **[AWS Pricing MCP Server](https://awslabs.github.io/mcp/servers/aws-pricing-mcp-server)**: Accesses the AWS Price List API for retrieving exact service pricing information and expected cost comparisons.
+   - **[AWS Billing & Cost Management MCP Server](https://awslabs.github.io/mcp/servers/billing-cost-management-mcp-server)**: Tailored access to billing data, native Cost Explorer insights, historical invoices, budget management, and savings plans optimizations.
+   - **[AWS CloudTrail MCP Server](https://awslabs.github.io/mcp/servers/cloudtrail-mcp-server)**: Access to CloudTrail logging events for auditing provisioning patterns, user activity, and holistic security analysis.
+   - **[AWS IaC MCP Server](https://awslabs.github.io/mcp/servers/aws-iac-mcp-server)**: Provides detailed Infrastructure as Code insights covering Terraform, CloudFormation, and other deployment modules.
 
 ---
 
@@ -180,6 +181,13 @@ docker compose ps
 - Verify API key + deployment name.
 - Ensure the model supports functions/tool calling.
 
+### MCP Server Connection Issues
+
+- If the AI struggles to retrieve AWS data, confirm that your authentication works:
+  - **Using IAM User**: Ensure you have configured the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` correctly in `aws.env`.
+  - **Using IAM Role**: If relying on an Instance Profile container role, ensure the IAM role is properly attached to the compute host and contains the required policies. Verify `AWS_DEFAULT_REGION` is still populated.
+- Review Docker service logs for the `mcp-servers` container to identify transport or timeout errors.
+
 ---
 
 ## Credits
@@ -187,6 +195,5 @@ docker compose ps
 - **Azure OpenAI** for LLM capabilities
 - **LangGraph** for agent orchestration
 - **Chainlit** for the UI framework
-- **MCP (Model Context Protocol)** for server integration
-- **AWS Cost Explorer & Cloud Control API**
+- **AWS MCP Servers** for AWS API, Billing, Pricing, and CloudTrail
 - **Localstack**, **PostgreSQL**, **Redis**, Docker ecosystem
