@@ -70,7 +70,7 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
 
 The application relies on several other environment files (`azure-openai.env`, `chainlit.env`, etc.). You must provide the correct keys/values before proceeding.
 
-* 👉 **[See the Complete Detailed list of Environment Variables inside docs/EXTENDED_README.md](docs/EXTENDED_README.md#environment-variables)**
+> 📖 **Note:** For a comprehensive breakdown of all required configurations, see the **[Extended README](docs/EXTENDED_README.md)** documentation.
 
 ### 4. Prepare the Database Migrations
 
