@@ -1,14 +1,12 @@
-# Welcome to Chainlit! 🚀🤖
+# AwsFinOpsBot 🌦️💰
 
-Hi there, Developer! 👋 We're excited to have you on board. Chainlit is a powerful tool designed to help you prototype, debug and share applications built on top of LLMs.
+Welcome to your AI-powered companion for AWS FinOps and Cloud Cost Optimization. I'm here to help you navigate and optimize your cloud spending with precision.
 
-## Useful Links 🔗
+## How I Can Help
 
-- **Documentation:** Get started with our comprehensive [Chainlit Documentation](https://docs.chainlit.io) 📚
-- **Discord Community:** Join our friendly [Chainlit Discord](https://discord.gg/k73SQ3FyUh) to ask questions, share your projects, and connect with other developers! 💬
+- **Cost Analysis:** Gain deep insights into your AWS bill and identify significant spending trends.
+- **Optimization Strategy:** Receive actionable recommendations for Reserved Instances, Savings Plans, and Spot instance utilization.
+- **Waste Identification:** Quickly locate underutilized resources and uncover easy wins for cost reduction.
+- **Financial Reporting:** Generate concise summaries of your infrastructure's financial health.
 
-We can't wait to see what you create with Chainlit! Happy coding! 💻😊
-
-## Welcome screen
-
-To modify the welcome screen, edit the `chainlit.md` file at the root of your project. If you do not want a welcome screen, just leave this file empty.
+Ready to optimize? Start by asking a question about your AWS environment or cost data!

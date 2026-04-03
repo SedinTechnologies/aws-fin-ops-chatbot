@@ -2,6 +2,10 @@
 require_login = true
 
 [project]
+# Force a specific language for all users.
+# If not set, the browser's language will be used.
+language = "en-US"
+
 # List of environment variables to be provided by each user to use the app.
 user_env = []
 
