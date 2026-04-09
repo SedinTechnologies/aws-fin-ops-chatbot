@@ -1,6 +1,6 @@
 # LangGraph Implementation and Workflow
 
-This document explains the **LangGraph Flow** implemented in [src/langgraph_client.py](../src/langgraph_client.py), which orchestrates the AWS FinOps Chatbot logic using a simplified "KISS" (Keep It Simple, Stupid) architecture.
+This document explains the **LangGraph Flow** implemented in [src/langgraph_client.py](../src/langgraph_client.py), which orchestrates the AWS FinOps Chatbot logic using a streamlined, minimalist architecture.
 
 ## 1. The Graph Structure
 
@@ -19,7 +19,7 @@ graph TD
 ### Components
 
 * **`agent` Node**:
-  * **Role**: This is the decision-maker, powered by **Azure OpenAI**.
+  * **Role**: This is the decision-maker, powered by **Generative AI**.
   * **Input**: Receives the current history of messages (`MessagesState`).
   * **Logic**: It analyzes the conversation and decides whether to:
     1. **Call a Tool**: If it needs data (e.g., "Call Cost Explorer").
