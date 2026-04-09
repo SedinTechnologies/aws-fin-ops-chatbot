@@ -1,6 +1,6 @@
-# AwsFinOpsBot - Extended Documentation
+# AWS FinOps Chatbot - Extended Documentation
 
-This document contains detailed information regarding the configuration, architecture, and troubleshooting of the AwsFinOpsBot.
+This document contains detailed information regarding the configuration, architecture, and troubleshooting of the AWS FinOps Chatbot.
 
 For a high-level overview and basic setup instructions, please see the [main README](../README.md).
 

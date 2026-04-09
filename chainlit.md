@@ -1,4 +1,4 @@
-# AwsFinOpsBot 🌦️💰
+# AWS FinOps Chatbot 🌦️💰
 
 Welcome to your AI-powered companion for AWS FinOps and Cloud Cost Optimization. I'm here to help you navigate and optimize your cloud spending with precision.
 

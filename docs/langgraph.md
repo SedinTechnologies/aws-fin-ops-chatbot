@@ -1,6 +1,6 @@
 # LangGraph Implementation and Workflow
 
-This document explains the **LangGraph Flow** implemented in [src/langgraph_client.py](../src/langgraph_client.py), which orchestrates the AwsFinOpsBot logic using a simplified "KISS" (Keep It Simple, Stupid) architecture.
+This document explains the **LangGraph Flow** implemented in [src/langgraph_client.py](../src/langgraph_client.py), which orchestrates the AWS FinOps Chatbot logic using a simplified "KISS" (Keep It Simple, Stupid) architecture.
 
 ## 1. The Graph Structure
 

@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>AwsFinOpsBot</h1>
+  <h1>AWS FinOps Chatbot</h1>
   <p><strong>An AI-driven assistant built to analyze AWS billing, optimize costs, and track resource usage.</strong></p>
 </div>
 
@@ -7,9 +7,9 @@
 
 ## 📖 Overview
 
-**AwsFinOpsBot** combines the power of **Azure OpenAI** with a comprehensive suite of **AWS MCP (Model Context Protocol) servers** to seamlessly retrieve real-time AWS API telemetry, billing metrics, pricing data, CloudTrail audits, and Infrastructure as Code (IaC) configurations. Built on top of a robust **LangGraph** orchestration workflow, the bot provides interactive, strictly domain-bound insights into your cloud infrastructure via a sleek **Chainlit** web UI.
+**AWS FinOps Chatbot** combines the power of **Azure OpenAI** with a comprehensive suite of **AWS MCP (Model Context Protocol) servers** to seamlessly retrieve real-time AWS API telemetry, billing metrics, pricing data, CloudTrail audits, and Infrastructure as Code (IaC) configurations. Built on top of a robust **LangGraph** orchestration workflow, the bot provides interactive, strictly domain-bound insights into your cloud infrastructure via a sleek **Chainlit** web UI.
 
-Whether you want to analyze deep spending trends, correlate CloudWatch metrics to find unutilized resources, review security audits, or set up customizable cost guardrails, the AwsFinOpsBot handles it natively and securely.
+Whether you want to analyze deep spending trends, correlate CloudWatch metrics to find unutilized resources, review security audits, or set up customizable cost guardrails, the AWS FinOps Chatbot handles it natively and securely.
 
 ![Architecture](docs/architecture.png)
 
