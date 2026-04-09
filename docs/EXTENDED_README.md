@@ -35,12 +35,21 @@ The application uses several environment variables for configuration. These are 
 
 | Variable | File | Default | Description |
 | :--- | :--- | :--- | :--- |
-| **Azure OpenAI** | | | |
-| `OPENAI_API_VERSION` | `azure-openai.env` | `2025-01-01-preview` | API version for Azure OpenAI |
-| `AZURE_OPENAI_MODEL` | `azure-openai.env` | `gpt-5` | Model deployment name |
-| `AZURE_OPENAI_ENDPOINT` | `azure-openai.env` | - | Azure OpenAI Endpoint URL |
-| `AZURE_OPENAI_API_KEY` | `azure-openai.env` | - | **Secret**: API Key for Azure OpenAI |
-| `AZURE_OPENAI_API_KEY2` | `azure-openai.env` | - | **Secret**: Secondary API Key (Optional) |
+| **AI Orchestration** | | | |
+| `AI_PROVIDER` | `llm.env` | `AZURE_OPEN_AI` | Controls the active model backend. Valid values: `AZURE_OPEN_AI` or `OLLAMA`. |
+| **Azure OpenAI Configuration** | | | |
+| `OPENAI_API_VERSION` | `llm.env` | `2025-01-01-preview` | API version for Azure OpenAI |
+| `AZURE_OPENAI_MODEL` | `llm.env` | `gpt-5` | Model deployment name |
+| `AZURE_OPENAI_ENDPOINT` | `llm.env` | - | Azure OpenAI Endpoint URL |
+| `AZURE_OPENAI_API_KEY` | `llm.env` | - | **Secret**: API Key for Azure OpenAI |
+| `AZURE_OPENAI_API_KEY2` | `llm.env` | - | **Secret**: Secondary API Key (Optional) |
+| **Local Ollama Support** | | | |
+| `OLLAMA_BASE_URL` | `llm.env` | `http://host.docker.internal:11434` | Base URL for Ollama |
+| `OLLAMA_MODEL` | `llm.env` | `qwen3.5:4b` | Ollama model name |
+| `OLLAMA_TEMPERATURE` | `llm.env` | `1.0` | Temperature |
+| `OLLAMA_TOP_P` | `llm.env` | `0.95` | Top P parameter |
+| `OLLAMA_TOP_K` | `llm.env` | `20` | Top K parameter |
+| `OLLAMA_PRESENCE_PENALTY` | `llm.env` | `1.5` | Presence Penalty |
 | **AWS Credentials** | | | |
 | `AWS_ACCESS_KEY_ID` | `aws.env` | - | **Secret**: AWS Access Key ID |
 | `AWS_SECRET_ACCESS_KEY` | `aws.env` | - | **Secret**: AWS Secret Access Key |

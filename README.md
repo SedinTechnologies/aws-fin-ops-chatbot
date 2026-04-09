@@ -68,7 +68,7 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
 
 ### 3. Configure Other Environment Variables
 
-The application relies on several other environment files (`azure-openai.env`, `chainlit.env`, etc.). You must provide the correct keys/values before proceeding.
+The application relies on several other environment files (`llm.env`, `chainlit.env`, etc.). You must provide the correct keys/values before proceeding.
 
 > 📖 **Note:** For a comprehensive breakdown of all required configurations, see the **[Extended README](docs/EXTENDED_README.md)** documentation.
 

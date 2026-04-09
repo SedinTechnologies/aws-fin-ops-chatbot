@@ -25,7 +25,7 @@ services:
     image: aws-finops-bot:data-migration
     build:
       context: .
-      dockerfile: prisma.Dockerfile
+      dockerfile: Dockerfile.prisma
     volumes:
       - ./prisma/:/app/
     environment:
@@ -78,7 +78,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - secrets/azure-openai.env
+      - secrets/llm.env
       - secrets/chainlit.env
       - secrets/langgraph.env
       - secrets/guardrails.env
