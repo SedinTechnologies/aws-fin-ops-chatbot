@@ -63,6 +63,8 @@ services:
 
   chainlit-ui:
     platform: linux/arm64
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_started
