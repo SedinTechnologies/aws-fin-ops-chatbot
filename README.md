@@ -7,7 +7,7 @@
 
 ## 📖 Overview
 
-**AWS FinOps Chatbot** combines the power of **advanced Generative AI** with a comprehensive suite of **AWS MCP (Model Context Protocol) servers** to seamlessly retrieve real-time AWS API telemetry, billing metrics, pricing data, CloudTrail audits, and Infrastructure as Code (IaC) configurations. Built on top of a robust **LangGraph** orchestration workflow, the bot provides interactive, strictly domain-bound insights into your cloud infrastructure via a sleek **Chainlit** web UI.
+**AWS FinOps Chatbot** combines the power of **advanced Generative AI** with a comprehensive suite of **AWS MCP (Model Context Protocol) servers** to seamlessly retrieve real-time AWS API telemetry, billing metrics, pricing data, CloudTrail audits, and Infrastructure as Code (IaC) configurations. Built on top of a robust **LangGraph** orchestration workflow, the bot provides interactive, strictly domain-bound insights into your cloud infrastructure via a sleek **Chainlit** web UI. For privacy-conscious users and organizations, the application natively supports local **Ollama** models, ensuring that your sensitive infrastructure data never leaves your secure environment.
 
 Whether you want to analyze deep spending trends, correlate CloudWatch metrics to find unutilized resources, review security audits, or set up customizable cost guardrails, the AWS FinOps Chatbot handles it natively and securely.
 
@@ -15,6 +15,7 @@ Whether you want to analyze deep spending trends, correlate CloudWatch metrics t
 
 ### 🌟 Key Features
 
+* **Flexible Model Integrations**: Currently, the bot natively integrates with both Azure OpenAI and local Ollama models. Furthermore, it is designed to be easily extendable to support other large enterprise models such as Claude or Gemini.
 * **Deep AWS API Integrations**: Broad coverage across the AWS ecosystem using specialized MCP servers like the API, Pricing, and Documentation tools.
 * **AWS Billing & Cost Management**: Break down costs by service, region, and tags. Instantly detect monthly spend trends, budget overages, and savings plans optimizations.
 * **Security & Infrastructure Audits**: Access CloudTrail logs for auditing historical user events and query IaC configurations for compliance.

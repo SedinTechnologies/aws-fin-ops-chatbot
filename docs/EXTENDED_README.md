@@ -85,6 +85,8 @@ The application uses several environment variables for configuration. These are 
 | `STREAMABLE_HTTP_READY_TIMEOUT` | `langgraph.env` | `25` | Streamable HTTP ready timeout (seconds) |
 | `STREAMABLE_HTTP_READY_INITIAL_DELAY` | `langgraph.env` | `2` | Streamable HTTP ready initial delay (seconds) |
 
+> 💡 **Ollama Models**: We have evaluated multiple local models, and currently, only the **Qwen** family of models (especially 3.5) are functioning as expected. For adequate reasoning and output quality, we highly recommend using models with **at least 4B parameters**. When switching or testing different models, be sure to update the `OLLAMA_TEMPERATURE`, `OLLAMA_TOP_P`, `OLLAMA_TOP_K` and `OLLAMA_PRESENCE_PENALTY` tuning parameters to suit your specific model.
+
 ---
 
 ## Application Architecture
