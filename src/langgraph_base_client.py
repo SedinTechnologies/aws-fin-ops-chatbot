@@ -13,46 +13,33 @@ from langgraph.checkpoint.memory import MemorySaver
 # Configure logging
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """
-You are an advanced AWS FinOps Assistant. Your goal is to provide **sharp, crisp, and actionable** insights exclusively regarding AWS cloud infrastructure, billing, and architecture.
+TOOL_CALLING_PROMPT = """
+You are an advanced AWS FinOps Assistant. Your MUST provide crisp, actionable insights regarding AWS cloud infrastructure and billing.
 
-### 🛑 DOMAIN RESTRICTION
-You are strictly bounded to AWS, DevOps, FinOps, and cloud engineering topics. If the user asks about ANY unrelated topic (e.g., general coding questions not related to AWS, recipes, history, general chit-chat), you MUST respectfully decline to answer and remind them of your specific AWS FinOps domain.
+### 🛑 REDIRECT NON-AWS QUERIES
+You are strictly bounded to AWS, DevOps, and FinOps. Decline to answer unrelated topics.
 
-### 🛠️ TOOL CALLING GUIDELINES
-- You have access to various AWS tools natively described in your tools context.
+### 🛠️ TOOL CALLING GUIDELINES (CRITICAL)
+- You MUST use the provided tools to answer questions. Do NOT explain how to get data — call the tools to get it.
 - **IMPORTANT**: For CloudWatch `get_metric_data`, use **naive ISO datetimes** (NO timezone, NO 'Z'). Example: `2023-10-27T10:00:00`.
----
-### 🧠 STRATEGIC WORKFLOWS
-1. **Debugging Cost Spikes**: Cost Explorer (Identify) -> CloudWatch (Correlate) -> CloudTrail (Root Cause).
-2. **Cost Optimization**: Cost Explorer (Usage) -> Pricing (Cheaper Options) -> Billing (Savings Plans).
----
-### 📝 RESPONSE GUIDELINES
-**VISUAL IMPACT IS CRITICAL.**
-1. **Structure**:
-  - **Headline**: MUST use `###` markdown. Example: `### 🚀 S3 Cost Spike Analysis`
-  - **Key Findings**: Max 3 bullet points. **Bold** key numbers and terms.
-  - **Action**: 1 clear recommendation.
-2. **Tone**: Direct, professional, and confident.
-3. **Formatting**:
-  - **Headings**: ALWAYS use `###` for section titles.
-  - **Metrics**: ALWAYS **bold** key numbers (e.g., **$50.00**).
-  - **Resources**: Use `code` for IDs.
-  - **Header Hierarchy**: Strictly avoid using H1 (#) headers; always start your header hierarchy at H2 (##) or H3 (###).
-  - **Use Emojis & Icons:** Use emojis liberally throughout your response (e.g., in headers, lists, and key points) to make it look robust and user-friendly.
-  - **Use Markdown** to make your responses beautiful.
-  - **Tables**: **ALWAYS** use tables for comparing multiple items, regions, instance types, or costs.
+- **IMPORTANT**: For Cost Explorer tools, the `metrics` parameter MUST be a valid JSON array of strings. Example: `["UnblendedCost"]`
+- **NO_THINK**: Do NOT output <think> tags or reasoning steps. Output only the tool call JSON.
 
 ### ⚡ PERFORMANCE RULES
-1. **Parallel Execution**: When comparing multiple regions or services, **ALWAYS call all necessary tools in parallel** in a single turn. Do not wait for one result before requesting the next.
-2. **Efficiency**: Fetch all required data (pricing, specs, usage) in the fewest number of turns possible.
-3. **Timeouts**: If a tool call fails, retry once with a simplified query.
----
+- **Parallel Execution**: ALWAYS call all necessary tools in parallel in a single turn. 
+- **Efficiency**: Fetch all required data in the fewest turns possible.
+"""
+
+RESPONSE_FORMAT_PROMPT = """
+### 📝 RESPONSE FORMATTING (Apply only when sending final text response to the user)
+**VISUAL IMPACT IS CRITICAL.**
+1. **Structure**: Max 3 bullet points for key findings. **Bold** key numbers. 1 clear recommendation.
+2. **Headings**: ALWAYS use `###` for section titles. Strictly avoid using H1 (#).
+3. **Use Emojis**: Use emojis liberally (e.g., in headers and lists).
+4. **Tables**: **ALWAYS** use tables for comparing multiple items or costs.
+
 ### 🔮 NEXT STEPS
-At the very end, provide 3 follow-up questions.
-These questions MUST be written as direct, actionable queries or commands without conversational fillers like "Can you", "Do you", or "Could you" (e.g., "Show me the logs for XYZ", "What is the cost breakdown for EC2?", "List the top resources by cost").
-Make sure each suggestion shouldn't be more than 80 chars long.
-Format exactly like below:
+At the very end of your response, provide 3 short actionable follow-up questions explicitly formatted like:
 ```
 suggestions:
 question 1
@@ -60,6 +47,8 @@ question 2
 question 3
 ```
 """
+
+SYSTEM_PROMPT = f"{TOOL_CALLING_PROMPT}\n{RESPONSE_FORMAT_PROMPT}"
 
 class MessagesState(TypedDict):
   messages: Annotated[List[BaseMessage], add_messages]
@@ -88,15 +77,22 @@ class BaseLangGraphClient:
   def _init_llm(self):
     raise NotImplementedError("Subclasses must implement _init_llm")
 
+  def _get_system_prompt(self) -> str:
+    """Returns the system prompt for the agent. Subclasses can override if needed."""
+    return SYSTEM_PROMPT
+
   def _build_graph(self) -> StateGraph:
     # Bind tools to LLM
     llm_with_tools = self._llm.bind_tools(self.tools)
 
     def llm_node(state: MessagesState):
-      # Prepend the System Prompt to ensure the LLM always has instructions
-      # We do this here instead of adding it to the state to avoid duplication in memory
-      messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-      return {"messages": [llm_with_tools.invoke(messages)]}
+      try:
+        messages = [SystemMessage(content=self._get_system_prompt())] + state["messages"]
+        return {"messages": [llm_with_tools.invoke(messages)]}
+      except Exception as e:
+        logger.error(f"LLM Error: {e}", exc_info=True)
+        from langchain_core.messages import AIMessage
+        return {"messages": [AIMessage(content=f"An error occurred while generating the response or calling tools. Error details: {str(e)}")]}
 
     def guard_node(state: MessagesState):
       # Placeholder for guardrails if needed, or simple pass-through
@@ -129,6 +125,29 @@ class BaseLangGraphClient:
 
     return workflow
 
+  def _filter_thinking_tokens(self) -> Any:
+    """Returns an object to strip <think> blocks from streamed output."""
+    class ThinkFilter:
+      def __init__(self):
+        self.in_think_block = False
+      
+      def process(self, piece: str) -> str:
+        if not piece: return ""
+        
+        if self.in_think_block:
+          if "</think>" in piece:
+            self.in_think_block = False
+            return piece.split("</think>", 1)[1]
+          return ""
+          
+        if "<think>" in piece:
+          self.in_think_block = True
+          return piece.split("<think>", 1)[0]
+          
+        return piece
+        
+    return ThinkFilter()
+
   async def stream_response(self, message: str, session_id: str, user_id: str, guardrails: Any = None):
     """Streams the response from the graph."""
 
@@ -153,10 +172,14 @@ class BaseLangGraphClient:
         yield str(e)
         return
 
+    think_filter = self._filter_thinking_tokens()
+
     # Stream events using astream (messages mode) to get token-level streaming
     async for msg, metadata in self._app.astream(inputs, config=config, stream_mode="messages"):
       # Only stream from the agent node to avoid echoing tool outputs
       if metadata.get("langgraph_node") == "agent":
         # Yield only string content chunks
         if msg.content and isinstance(msg.content, str):
-          yield msg.content
+          filtered_chunk = think_filter.process(msg.content)
+          if filtered_chunk:
+            yield filtered_chunk
