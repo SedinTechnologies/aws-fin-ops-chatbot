@@ -22,12 +22,13 @@ You are strictly bounded to AWS, DevOps, and FinOps. Decline to answer unrelated
 ### 🛠️ TOOL CALLING GUIDELINES (CRITICAL)
 - You MUST use the provided tools to answer questions. Do NOT explain how to get data — call the tools to get it.
 - **IMPORTANT**: For CloudWatch `get_metric_data`, use **naive ISO datetimes** (NO timezone, NO 'Z'). Example: `2023-10-27T10:00:00`.
-- **IMPORTANT**: For Cost Explorer tools, the `metrics` parameter MUST be a valid JSON array of strings. Example: `["UnblendedCost"]`
+- **IMPORTANT**: For Cost Explorer tools, the `metrics` and `group_by` parameters MUST be passed as **JSON stringified arrays**, NOT actual JSON arrays. Example: `metrics="[\"UnblendedCost\"]"`, `group_by="[{\"Type\": \"DIMENSION\", \"Key\": \"SERVICE\"}]"`
 - **NO_THINK**: Do NOT output <think> tags or reasoning steps. Output only the tool call JSON.
 
-### ⚡ PERFORMANCE RULES
+### ⚡ PERFORMANCE & DATA RULES
 - **Parallel Execution**: ALWAYS call all necessary tools in parallel in a single turn. 
 - **Efficiency**: Fetch all required data in the fewest turns possible.
+- **SQL Tables**: If a tool explicitly states it converted rows to a SQL table (e.g., 'Converted 12 rows to SQL table: getCostAndUsage_xxx'), you DO NOT have the data yet! You MUST subsequently call the corresponding `query_sqlite` or `execute_sql_query` tool (or similar) on that table to retrieve the exact figures before generating your final response.
 """
 
 RESPONSE_FORMAT_PROMPT = """
@@ -36,7 +37,8 @@ RESPONSE_FORMAT_PROMPT = """
 1. **Structure**: Max 3 bullet points for key findings. **Bold** key numbers. 1 clear recommendation.
 2. **Headings**: ALWAYS use `###` for section titles. Strictly avoid using H1 (#).
 3. **Use Emojis**: Use emojis liberally (e.g., in headers and lists).
-4. **Tables**: **ALWAYS** use tables for comparing multiple items or costs.
+4. **Tables**: **ALWAYS** use tables for comparing multiple items or costs. 
+   - **CRITICAL FOR COST DATA**: When summarizing multi-month data, ALWAYS include EVERY month in the table (do not skip any months). For each month, show the Total Cost and the breakdown of the Top 3 services.
 
 ### 🔮 NEXT STEPS
 At the very end of your response, provide 3 short actionable follow-up questions explicitly formatted like:
@@ -104,14 +106,47 @@ class BaseLangGraphClient:
     # Add nodes
     # Custom tool node with logging
     async def tool_node_with_logging(state: MessagesState):
+      import json
+      import copy
       last_message = state["messages"][-1]
-      if hasattr(last_message, "tool_calls"):
-        for tool_call in last_message.tool_calls:
+      
+      if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        new_tool_calls = copy.deepcopy(last_message.tool_calls)
+        modified = False
+        
+        for tool_call in new_tool_calls:
+          # Intercept and stringify lists/dicts for fastmcp compatibility
+          if tool_call['name'] in ['cost_explorer', 'cost-explorer']:
+            for key in ['metrics', 'group_by', 'filter']:
+              if key in tool_call['args'] and not isinstance(tool_call['args'][key], str):
+                tool_call['args'][key] = json.dumps(tool_call['args'][key])
+                modified = True
           logger.debug(f"Executing tool: {tool_call['name']} with args: {tool_call['args']}")
+
+        if modified:
+          from langchain_core.messages import AIMessage
+          new_message = AIMessage(
+              content=last_message.content,
+              tool_calls=new_tool_calls,
+              id=last_message.id,
+              additional_kwargs=last_message.additional_kwargs
+          )
+          state = {**state, "messages": state["messages"][:-1] + [new_message]}
 
       # Use standard ToolNode logic
       tool_node = ToolNode(self.tools)
-      return await tool_node.ainvoke(state)
+      result = await tool_node.ainvoke(state)
+      
+      # Log the result of the tool
+      if "messages" in result and result["messages"]:
+          # If we modified the AIMessage, we MUST return it so LangGraph state overwrites the old unstringified one!
+          if modified:
+              result["messages"].insert(0, new_message)
+              
+          for msg in result["messages"]:
+              logger.debug(f"Tool Result: {msg.name if hasattr(msg, 'name') else 'AIMessage'} -> {msg.content}")
+              
+      return result
 
     workflow.add_node("agent", llm_node)
     workflow.add_node("tools", tool_node_with_logging)
@@ -175,11 +210,15 @@ class BaseLangGraphClient:
     think_filter = self._filter_thinking_tokens()
 
     # Stream events using astream (messages mode) to get token-level streaming
-    async for msg, metadata in self._app.astream(inputs, config=config, stream_mode="messages"):
-      # Only stream from the agent node to avoid echoing tool outputs
-      if metadata.get("langgraph_node") == "agent":
-        # Yield only string content chunks
-        if msg.content and isinstance(msg.content, str):
-          filtered_chunk = think_filter.process(msg.content)
-          if filtered_chunk:
-            yield filtered_chunk
+    try:
+      async for msg, metadata in self._app.astream(inputs, config=config, stream_mode="messages"):
+        # Only stream from the agent node to avoid echoing tool outputs
+        if metadata.get("langgraph_node") == "agent":
+          # Yield only string content chunks
+          if msg.content and isinstance(msg.content, str):
+            filtered_chunk = think_filter.process(msg.content)
+            if filtered_chunk:
+              yield filtered_chunk
+    except Exception as e:
+      logger.error(f"Stream Error: {e}", exc_info=True)
+      yield f"\n\n**Error:** {str(e)}"
