@@ -6,7 +6,6 @@ from chainlit.data import chainlit_data_layer
 
 from date_utils import LenientDatetime
 from mcp_utils import (
-  fetch_registered_mcp_tools_for_user,
   get_configured_mcp_tools,
   enabled_mcp_connections_list
 )
@@ -139,15 +138,11 @@ async def new_message(message: cl.Message):
       return
 
     logger.debug(f"New message from user: {message.content[:50]}")
-    tools = await fetch_registered_mcp_tools_for_user(user)
 
     client = cl.user_session.get("client")
     if client is None:
       await cl.Message(content="Session not initialized. Please refresh and try again.").send()
       return
-
-    tools = await get_configured_mcp_tools(user)
-    logger.debug(f"Loaded {len(tools)} MCP tools for LangGraph")
 
     response_message = cl.Message(content="")
     await response_message.stream_token(" ")
