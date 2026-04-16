@@ -24,11 +24,24 @@ You are strictly bounded to AWS, DevOps, and FinOps. Decline to answer unrelated
 - **IMPORTANT**: For CloudWatch `get_metric_data`, use **naive ISO datetimes** (NO timezone, NO 'Z'). Example: `2023-10-27T10:00:00`.
 - **IMPORTANT**: For Cost Explorer tools, the `metrics` and `group_by` parameters MUST be passed as **JSON stringified arrays**, NOT actual JSON arrays. Example: `metrics="[\"UnblendedCost\"]"`, `group_by="[{\"Type\": \"DIMENSION\", \"Key\": \"SERVICE\"}]"`
 - **NO_THINK**: Do NOT output <think> tags or reasoning steps. Output only the tool call JSON.
+- **SILENT TOOL CALLS**: When you decide to call a tool, do NOT output any explanatory text before or alongside the tool call. Just call the tool silently. Only produce text in your FINAL response after you have all tool results.
 
 ### ⚡ PERFORMANCE & DATA RULES
-- **Parallel Execution**: ALWAYS call all necessary tools in parallel in a single turn. 
+- **Parallel Execution**: ALWAYS call all necessary tools in parallel in a single turn.
 - **Efficiency**: Fetch all required data in the fewest turns possible.
-- **SQL Tables**: If a tool explicitly states it converted rows to a SQL table (e.g., 'Converted 12 rows to SQL table: getCostAndUsage_xxx'), you DO NOT have the data yet! You MUST subsequently call the corresponding `query_sqlite` or `execute_sql_query` tool (or similar) on that table to retrieve the exact figures before generating your final response.
+- **Granularity (CRITICAL)**: For ANY Cost Explorer queries fetching more than 14 days of data, you MUST explicitly set the parameter `granularity="MONTHLY"`. If you use `DAILY` for long periods, the AWS MCP Server will crash or lock the result into an unreadable state due to massive payload sizes!
+
+### 🔢 DATA ACCURACY (CRITICAL)
+- **EXACT FIGURES**: When reporting cost data, you MUST copy the EXACT dollar amounts from the tool output. NEVER round, estimate, or approximate numbers.
+- **NO FABRICATION**: If the tool returns $2,345.67, report exactly $2,345.67. Do NOT change it to $2,346 or $2,350 or any other value.
+- **NO DUPLICATION**: Each service must appear EXACTLY ONCE per period. If a service appears in the tool output once, it must appear in your table once. Never duplicate rows.
+- **NO EXTRAPOLATION**: If the tool does not return data for a month, do NOT copy another month's values into it. Only report data that the tool explicitly returned.
+- **VERIFY TOTALS**: Manually add up individual amounts to confirm your totals match. If they don't, recompute before responding.
+
+### 📅 DATE RANGE RULES (CRITICAL)
+- "Last N months" means the last N COMPLETED calendar months (excluding the current partial month). Example: If today is 2026-04-16, "last 3 months" = January 1, 2026 to April 1, 2026 (Jan, Feb, Mar).
+- For a SPECIFIC month query like "March 2026 cost", use start_date=2026-03-01 and end_date=2026-04-01 (Cost Explorer end_date is exclusive).
+- NEVER overlap date ranges or include the current partial month unless the user explicitly asks for it (e.g., "including this month", "year to date").
 """
 
 RESPONSE_FORMAT_PROMPT = """
@@ -37,8 +50,12 @@ RESPONSE_FORMAT_PROMPT = """
 1. **Structure**: Max 3 bullet points for key findings. **Bold** key numbers. 1 clear recommendation.
 2. **Headings**: ALWAYS use `###` for section titles. Strictly avoid using H1 (#).
 3. **Use Emojis**: Use emojis liberally (e.g., in headers and lists).
-4. **Tables**: **ALWAYS** use tables for comparing multiple items or costs. 
-   - **CRITICAL FOR COST DATA**: When summarizing multi-month data, ALWAYS include EVERY month in the table (do not skip any months). For each month, show the Total Cost and the breakdown of the Top 3 services.
+4. **Tables**: **ALWAYS** use Markdown tables for presenting ANY cost or billing data, regardless of the duration.
+   - **CRITICAL FOR COST DATA**: When summarizing multi-month data, ALWAYS include EVERY month in the table (do not skip any months) to ensure an accurate timeline.
+   - **MONTHLY TOTALS ROW**: For multi-month tables, ALWAYS include a bold **Total** row at the bottom that shows the sum for EACH month column AND the grand total. Example: `| **Total** | **$3,200** | **$2,800** | **$6,000** |`
+   - **DYNAMIC PRESENTATION**: Adapt your table columns to the user's specific query. If they ask for breakdowns, include columns for the specific services.
+   - **MATH & TOTALS**: The 'Total Cost' must unconditionally match the true gross sum of the period! If you filter columns for brevity, you MUST still calculate the total logically including 'Tax' and miscellaneous unblended services.
+   - **TRUTHFULNESS**: Do NOT hallucinate origins. Always state data is sourced from `AWS Cost Explorer`, never make up services like 'CloudTrail Lake'.
 
 ### 🔮 NEXT STEPS
 At the very end of your response, provide 3 short actionable follow-up questions explicitly formatted like:
@@ -81,7 +98,9 @@ class BaseLangGraphClient:
 
   def _get_system_prompt(self) -> str:
     """Returns the system prompt for the agent. Subclasses can override if needed."""
-    return SYSTEM_PROMPT
+    from datetime import datetime
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    return f"CURRENT SYSTEM DATE: {current_date}\n\n{SYSTEM_PROMPT}"
 
   def _build_graph(self) -> StateGraph:
     # Bind tools to LLM
@@ -105,19 +124,23 @@ class BaseLangGraphClient:
 
     # Add nodes
     # Custom tool node with logging
+    # Tool names that require JSON-stringified array/object parameters
+    COST_TOOL_NAMES = {'cost_explorer', 'cost-explorer', 'get_cost_and_usage', 'getcostexplorer'}
+    STRINGIFY_KEYS = {'metrics', 'group_by', 'filter'}
+
     async def tool_node_with_logging(state: MessagesState):
       import json
       import copy
       last_message = state["messages"][-1]
-      
+      modified = False
+
       if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         new_tool_calls = copy.deepcopy(last_message.tool_calls)
-        modified = False
-        
+
         for tool_call in new_tool_calls:
           # Intercept and stringify lists/dicts for fastmcp compatibility
-          if tool_call['name'] in ['cost_explorer', 'cost-explorer']:
-            for key in ['metrics', 'group_by', 'filter']:
+          if tool_call['name'].lower().replace('-', '_') in {n.replace('-', '_') for n in COST_TOOL_NAMES}:
+            for key in STRINGIFY_KEYS:
               if key in tool_call['args'] and not isinstance(tool_call['args'][key], str):
                 tool_call['args'][key] = json.dumps(tool_call['args'][key])
                 modified = True
@@ -136,16 +159,19 @@ class BaseLangGraphClient:
       # Use standard ToolNode logic
       tool_node = ToolNode(self.tools)
       result = await tool_node.ainvoke(state)
-      
+
+      available_tool_names = [t.name for t in self.tools]
+      logger.debug(f"Available tools for LLM: {available_tool_names}")
+
       # Log the result of the tool
       if "messages" in result and result["messages"]:
           # If we modified the AIMessage, we MUST return it so LangGraph state overwrites the old unstringified one!
           if modified:
               result["messages"].insert(0, new_message)
-              
+
           for msg in result["messages"]:
               logger.debug(f"Tool Result: {msg.name if hasattr(msg, 'name') else 'AIMessage'} -> {msg.content}")
-              
+
       return result
 
     workflow.add_node("agent", llm_node)
@@ -211,14 +237,31 @@ class BaseLangGraphClient:
 
     # Stream events using astream (messages mode) to get token-level streaming
     try:
+      prev_node = None
       async for msg, metadata in self._app.astream(inputs, config=config, stream_mode="messages"):
-        # Only stream from the agent node to avoid echoing tool outputs
-        if metadata.get("langgraph_node") == "agent":
-          # Yield only string content chunks
-          if msg.content and isinstance(msg.content, str):
-            filtered_chunk = think_filter.process(msg.content)
+        current_node = metadata.get("langgraph_node")
+
+        # When the agent resumes after tool execution, insert a newline separator
+        # so the post-tool response starts on a fresh line (preserves markdown headings).
+        if current_node == "agent" and prev_node == "tools":
+          yield "\n\n"
+
+        if current_node == "agent":
+          # Extract text content, handling both str and list-of-blocks formats
+          text = ""
+          if isinstance(msg.content, str):
+            text = msg.content
+          elif isinstance(msg.content, list):
+            text = "".join(
+              block.get("text", "") if isinstance(block, dict) else str(block)
+              for block in msg.content
+            )
+          if text:
+            filtered_chunk = think_filter.process(text)
             if filtered_chunk:
               yield filtered_chunk
+
+        prev_node = current_node
     except Exception as e:
       logger.error(f"Stream Error: {e}", exc_info=True)
       yield f"\n\n**Error:** {str(e)}"
