@@ -67,7 +67,7 @@ RESPONSE_FORMAT_PROMPT = """
 **Table rules**:
 - Columns: `| Service | Jan | Feb | Mar |` — one column per month. NO per-service total column.
 - Last row MUST be: `| **Total** | **$3,500** | **$3,300** | **$3,600** |` showing each month's total spend.
-- Include every month requested. Skip any service that is $0.00 across all months.
+- Include every month requested. REMOVE any service row where the cost is $0.00 in every column — do not show it at all.
 - Monthly totals must equal the exact sum of all service rows above.
 - Data source is AWS Cost Explorer. Do not fabricate service names.
 
@@ -76,12 +76,14 @@ RESPONSE_FORMAT_PROMPT = """
 - Use one emoji per heading at most (e.g., `### 📊 Cost Summary`). No emojis inline with dollar amounts or service names.
 - Do NOT list cost figures inside bullet points — that belongs in the table.
 
-**Suggestions** — at the very end, suggest 3 relevant follow-up questions in plain text. No code fences, no numbering, no prefixes:
+**Suggestions (MANDATORY)** — your response MUST always end with the keyword `suggestions:` on its own line, followed by exactly 3 follow-up questions (one per line, no numbering, no prefixes). The UI uses this keyword to render clickable buttons — omitting it means the user sees no follow-up options.
+- Each question MUST be specific to the data and query the user just made. Do NOT use generic or static questions.
+- Bad: "What are my costs?" — Good: "Which EC2 instances drove the $1,748.63 compute cost in March?"
 
 suggestions:
-<follow-up question based on the data>
-<follow-up question based on the data>
-<follow-up question based on the data>
+<question specific to the user's query and results>
+<question specific to the user's query and results>
+<question specific to the user's query and results>
 """
 
 SYSTEM_PROMPT = f"{TOOL_CALLING_PROMPT}\n{RESPONSE_FORMAT_PROMPT}"
