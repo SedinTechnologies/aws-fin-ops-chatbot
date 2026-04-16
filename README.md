@@ -18,6 +18,7 @@ Whether you want to analyze deep spending trends, correlate CloudWatch metrics t
 * **Flexible Model Integrations**: Currently, the bot natively integrates with both Azure OpenAI and local Ollama models. Furthermore, it is designed to be easily extendable to support other large enterprise models such as Claude or Gemini.
 * **Deep AWS API Integrations**: Broad coverage across the AWS ecosystem using specialized MCP servers like the API, Pricing, and Documentation tools.
 * **AWS Billing & Cost Management**: Break down costs by service, region, and tags. Instantly detect monthly spend trends, budget overages, and savings plans optimizations.
+* **Multiple LLM Backend Support**: Powered by either Azure OpenAI for enterprise-grade deployments or **Ollama** for a fully local open-source model setup.
 * **Security & Infrastructure Audits**: Access CloudTrail logs for auditing historical user events and query IaC configurations for compliance.
 * **Strict Domain-Bound Guardrails**: The bot enforces strict filtering policies to automatically reject non-AWS domain queries. Easily restrict query scopes via Account/Service allowlists.
 * **Interactive Chat UI**: Features fluid response streaming, rich Markdown formatting, and smart, quick-action follow-up suggestions for deeper investigation.
@@ -32,7 +33,7 @@ Follow these steps to get a local development environment running quickly so you
 ### Prerequisites
 
 * [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed.
-* Valid API Keys (Azure OpenAI) and appropriate AWS authentication credentials.
+* Valid API Keys (Azure OpenAI) or a local Ollama instance, and appropriate AWS authentication credentials.
 
 ### 1. Clone the Repository
 
@@ -69,7 +70,9 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
 
 ### 3. Configure Other Environment Variables
 
-The application relies on several other environment files (`llm.env`, `chainlit.env`, etc.). You must provide the correct keys/values before proceeding.
+The application relies on several other environment files located in the `secrets/` directory. You must provide the correct keys/values before proceeding.
+
+Navigate to the `secrets/` folder, copy the example files, and remove the `.example` extension (for instance, copy `aws.env.example` to `aws.env` and `llm.env.example` to `llm.env`), then add your actual values to the new files.
 
 > 📖 **Note:** For a comprehensive breakdown of all required configurations, see the **[Extended README](docs/EXTENDED_README.md)** documentation.
 
