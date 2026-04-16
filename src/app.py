@@ -178,8 +178,9 @@ async def new_message(message: cl.Message):
         if not question or question.startswith('```') or question.lower().startswith('suggestions'):
           continue
 
-        # Strip potential list markers (e.g., "1. ", "- ", "* ")
+        # Strip list markers (e.g., "1. ", "- ", "* ") and "question N:" prefixes
         question = re.sub(r'^(?:-|\*|\d+\.)\s+', '', question)
+        question = re.sub(r'^question\s*\d*[:.]\s*', '', question, flags=re.IGNORECASE)
 
         response_message.actions.append(
           cl.Action(

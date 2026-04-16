@@ -48,23 +48,23 @@ RESPONSE_FORMAT_PROMPT = """
 ### 📝 RESPONSE FORMATTING (Apply only when sending final text response to the user)
 **VISUAL IMPACT IS CRITICAL.**
 1. **Structure**: Max 3 bullet points for key findings. **Bold** key numbers. 1 clear recommendation.
-2. **Headings**: ALWAYS use `###` for section titles. Strictly avoid using H1 (#).
+2. **Headings**: ALWAYS use `###` for section titles. Strictly avoid using H1 (#) or H2 (##).
 3. **Use Emojis**: Use emojis liberally (e.g., in headers and lists).
 4. **Tables**: **ALWAYS** use Markdown tables for presenting ANY cost or billing data, regardless of the duration.
    - **CRITICAL FOR COST DATA**: When summarizing multi-month data, ALWAYS include EVERY month in the table (do not skip any months) to ensure an accurate timeline.
-   - **MONTHLY TOTALS ROW**: For multi-month tables, ALWAYS include a bold **Total** row at the bottom that shows the sum for EACH month column AND the grand total. Example: `| **Total** | **$3,200** | **$2,800** | **$6,000** |`
+   - **COLUMN ORDER**: For multi-month service breakdown tables, the FIRST data column after Service/Month must be **Total**, followed by individual months. Example: `| Service | **Total** | Jan | Feb | Mar |`
+   - **MONTHLY TOTALS ROW**: ALWAYS include a bold **Total** row at the bottom that shows the sum for EACH column. Example: `| **Total** | **$9,000** | **$3,200** | **$2,800** | **$3,000** |`
    - **DYNAMIC PRESENTATION**: Adapt your table columns to the user's specific query. If they ask for breakdowns, include columns for the specific services.
    - **MATH & TOTALS**: The 'Total Cost' must unconditionally match the true gross sum of the period! If you filter columns for brevity, you MUST still calculate the total logically including 'Tax' and miscellaneous unblended services.
    - **TRUTHFULNESS**: Do NOT hallucinate origins. Always state data is sourced from `AWS Cost Explorer`, never make up services like 'CloudTrail Lake'.
 
 ### 🔮 NEXT STEPS
-At the very end of your response, provide 3 short actionable follow-up questions explicitly formatted like:
-```
+At the very end of your response, suggest 3 short actionable follow-up questions that are RELEVANT to the data you just presented. Each question should help the user dig deeper into their specific results. Do NOT wrap them in code fences or backticks. Do NOT number them or add prefixes. Use this exact format:
+
 suggestions:
-question 1
-question 2
-question 3
-```
+<relevant follow-up question based on the output>
+<relevant follow-up question based on the output>
+<relevant follow-up question based on the output>
 """
 
 SYSTEM_PROMPT = f"{TOOL_CALLING_PROMPT}\n{RESPONSE_FORMAT_PROMPT}"
