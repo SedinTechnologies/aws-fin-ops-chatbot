@@ -4,8 +4,14 @@ WORKDIR /app
 
 COPY requirements.mcp.txt ./
 
-RUN pip install --no-cache-dir -r requirements.mcp.txt \
-  && rm -rf /var/cache/apt/*
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+     build-essential curl \
+  && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+  && . "$HOME/.cargo/env" \
+  && pip install --no-cache-dir -r requirements.mcp.txt \
+  && apt-get purge -y --auto-remove build-essential curl \
+  && rm -rf /var/lib/apt/lists/* /root/.cargo /root/.rustup
 
 COPY Procfile.mcp ./Procfile
 

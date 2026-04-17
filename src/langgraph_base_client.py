@@ -1,65 +1,97 @@
 from __future__ import annotations
 
-import os, logging
+import os, json, copy, logging
+from datetime import datetime
 from typing import Any, List, TypedDict, Annotated
+from collections import deque
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """
-You are an advanced AWS FinOps Assistant. Your goal is to provide **sharp, crisp, and actionable** insights exclusively regarding AWS cloud infrastructure, billing, and architecture.
+TOOL_CALLING_PROMPT = """
+You are an advanced AWS FinOps Assistant. You MUST provide crisp, actionable insights regarding AWS cloud infrastructure and billing.
 
-### 🛑 DOMAIN RESTRICTION
-You are strictly bounded to AWS, DevOps, FinOps, and cloud engineering topics. If the user asks about ANY unrelated topic (e.g., general coding questions not related to AWS, recipes, history, general chit-chat), you MUST respectfully decline to answer and remind them of your specific AWS FinOps domain.
+### 🛑 REDIRECT NON-AWS QUERIES
+You are strictly bounded to AWS, DevOps, and FinOps. Decline to answer unrelated topics.
 
-### 🛠️ TOOL CALLING GUIDELINES
-- You have access to various AWS tools natively described in your tools context.
-- **IMPORTANT**: For CloudWatch `get_metric_data`, use **naive ISO datetimes** (NO timezone, NO 'Z'). Example: `2023-10-27T10:00:00`.
----
-### 🧠 STRATEGIC WORKFLOWS
-1. **Debugging Cost Spikes**: Cost Explorer (Identify) -> CloudWatch (Correlate) -> CloudTrail (Root Cause).
-2. **Cost Optimization**: Cost Explorer (Usage) -> Pricing (Cheaper Options) -> Billing (Savings Plans).
----
-### 📝 RESPONSE GUIDELINES
-**VISUAL IMPACT IS CRITICAL.**
-1. **Structure**:
-  - **Headline**: MUST use `###` markdown. Example: `### 🚀 S3 Cost Spike Analysis`
-  - **Key Findings**: Max 3 bullet points. **Bold** key numbers and terms.
-  - **Action**: 1 clear recommendation.
-2. **Tone**: Direct, professional, and confident.
-3. **Formatting**:
-  - **Headings**: ALWAYS use `###` for section titles.
-  - **Metrics**: ALWAYS **bold** key numbers (e.g., **$50.00**).
-  - **Resources**: Use `code` for IDs.
-  - **Header Hierarchy**: Strictly avoid using H1 (#) headers; always start your header hierarchy at H2 (##) or H3 (###).
-  - **Use Emojis & Icons:** Use emojis liberally throughout your response (e.g., in headers, lists, and key points) to make it look robust and user-friendly.
-  - **Use Markdown** to make your responses beautiful.
-  - **Tables**: **ALWAYS** use tables for comparing multiple items, regions, instance types, or costs.
+### 🔧 TOOL ROUTING (CRITICAL — read this FIRST)
+For ANY question about costs, billing, spending, or pricing you MUST call the tool named **`cost-explorer`**. Do NOT use CloudTrail, documentation, IAC, or any other tool for cost queries.
 
-### ⚡ PERFORMANCE RULES
-1. **Parallel Execution**: When comparing multiple regions or services, **ALWAYS call all necessary tools in parallel** in a single turn. Do not wait for one result before requesting the next.
-2. **Efficiency**: Fetch all required data (pricing, specs, usage) in the fewest number of turns possible.
-3. **Timeouts**: If a tool call fails, retry once with a simplified query.
----
-### 🔮 NEXT STEPS
-At the very end, provide 3 follow-up questions.
-These questions MUST be written as direct, actionable queries or commands without conversational fillers like "Can you", "Do you", or "Could you" (e.g., "Show me the logs for XYZ", "What is the cost breakdown for EC2?", "List the top resources by cost").
-Make sure each suggestion shouldn't be more than 80 chars long.
-Format exactly like below:
-```
-suggestions:
-question 1
-question 2
-question 3
-```
+**`cost-explorer` tool usage**:
+- `operation="getCostAndUsage"` — for historical cost/spend data (most common)
+- `operation="getCostForecast"` — for future cost projections
+- `operation="getDimensionValues"` — to list available services, accounts, regions
+- `operation="getSavingsPlansUtilization"` — for Savings Plans data
+- Required params: `operation`, `start_date`, `end_date`, `granularity`, `metrics`
+- `metrics` and `group_by` MUST be **JSON stringified arrays**: `metrics="[\"UnblendedCost\"]"`, `group_by="[{\"Type\": \"DIMENSION\", \"Key\": \"SERVICE\"}]"`
+
+### 🛠️ GENERAL TOOL GUIDELINES
+- You MUST use tools to answer questions. Do NOT explain how to get data — call the tools.
+- For CloudWatch `get_metric_data`, use **naive ISO datetimes** (NO timezone, NO 'Z'). Example: `2023-10-27T10:00:00`.
+- **NO_THINK**: Do NOT output <think> tags or reasoning steps. Output only the tool call JSON.
+- **SILENT TOOL CALLS**: Do NOT output any text before or alongside a tool call. Only produce text in your FINAL response after you have all tool results.
+
+### ⚡ PERFORMANCE & DATA RULES
+- **Parallel Execution**: ALWAYS call all necessary tools in parallel in a single turn.
+- **Efficiency**: Fetch all required data in the fewest turns possible.
+- **Granularity (CRITICAL)**: For ANY Cost Explorer queries fetching more than 14 days of data, you MUST explicitly set the parameter `granularity="MONTHLY"`. If you use `DAILY` for long periods, the AWS MCP Server will crash or lock the result into an unreadable state due to massive payload sizes!
+
+### 🔢 DATA ACCURACY (CRITICAL)
+- **EXACT FIGURES**: Report all dollar amounts rounded to exactly 2 decimal places (e.g., $1,748.63, NOT $1,748.6341603047). Do NOT invent or change the magnitude of numbers — only format them as standard currency.
+- **NO DUPLICATION**: Each service must appear EXACTLY ONCE per period. If a service appears in the tool output once, it must appear in your table once. Never duplicate rows.
+- **NO EXTRAPOLATION**: If the tool does not return data for a month, do NOT copy another month's values into it. Only report data that the tool explicitly returned.
+- **VERIFY TOTALS**: Manually add up individual amounts to confirm your totals match. If they don't, recompute before responding.
+
+### 📅 DATE RANGE RULES (CRITICAL)
+- "Last N months" means the last N COMPLETED calendar months (excluding the current partial month). Example: If today is 2026-04-16, "last 3 months" = January 1, 2026 to April 1, 2026 (Jan, Feb, Mar).
+- For a SPECIFIC month query like "March 2026 cost", use start_date=2026-03-01 and end_date=2026-04-01 (Cost Explorer end_date is exclusive).
+- NEVER overlap date ranges or include the current partial month unless the user explicitly asks for it (e.g., "including this month", "year to date").
 """
+
+RESPONSE_FORMAT_PROMPT = """
+### RESPONSE FORMAT RULES
+
+**Layout** — every cost response MUST follow this exact order:
+1. One `###` heading (short, e.g., `### 📊 AWS Cost Summary — March 2026`). No H1/H2. No redundant text like "(requested month: …)".
+2. A one-line summary sentence with the total spend bolded (e.g., "Your total AWS spend for March 2026 was **$3,352.43** across 12 active services.").
+3. `### Key Takeaways` — 2-3 short plain-English bullet points. Simple language a non-technical reader can understand. Bold the dollar amount only. One bullet = one insight.
+4. `### Cost Breakdown` — the cost **table**. Present ALL cost data here, not in bullet points.
+5. `### Recommendation` — one short actionable paragraph.
+
+**Table rules**:
+- Columns: `| Service | Jan | Feb | Mar |` — one column per month. NO per-service total column.
+- Last row MUST be: `| **Total** | **$3,500** | **$3,300** | **$3,600** |` showing each month's total spend.
+- Include every month requested. REMOVE any service row where the cost is $0.00 in every column — do not show it at all.
+- Monthly totals must equal the exact sum of all service rows above.
+- Data source is AWS Cost Explorer. Do not fabricate service names.
+
+**Style**:
+- Keep headings short and clean — no parenthetical metadata.
+- Use one emoji per heading at most (e.g., `### 📊 Cost Summary`). No emojis inline with dollar amounts or service names.
+- Do NOT list cost figures inside bullet points — that belongs in the table.
+
+**Suggestions (MANDATORY)** — your response MUST always end with the keyword `suggestions:` on its own line, followed by exactly 3 follow-up questions (one per line, no numbering, no prefixes). The UI uses this keyword to render clickable buttons — omitting it means the user sees no follow-up options.
+- Each question MUST be specific to the data and query the user just made. Do NOT use generic or static questions.
+- Bad: "What are my costs?" — Good: "Which EC2 instances drove the $1,748.63 compute cost in March?"
+
+suggestions:
+<question specific to the user's query and results>
+<question specific to the user's query and results>
+<question specific to the user's query and results>
+"""
+
+SYSTEM_PROMPT = f"{TOOL_CALLING_PROMPT}\n{RESPONSE_FORMAT_PROMPT}"
+
+# Tool names that require JSON-stringified array/object parameters for fastmcp
+_COST_TOOL_NAMES = {'cost_explorer', 'cost-explorer', 'get_cost_and_usage', 'getcostexplorer'}
+_COST_TOOL_NAMES_NORMALIZED = {n.replace('-', '_') for n in _COST_TOOL_NAMES}
+_STRINGIFY_KEYS = {'metrics', 'group_by', 'filter'}
 
 class MessagesState(TypedDict):
   messages: Annotated[List[BaseMessage], add_messages]
@@ -75,77 +107,84 @@ class BaseLangGraphClient:
   def load_historical_messages(self, session_id: str, messages: List[dict]):
     config = { "configurable": { "thread_id": session_id } }
     langchain_messages = []
-    from langchain_core.messages import AIMessage, HumanMessage
     for msg in messages:
       if msg["role"] == "user":
         langchain_messages.append(HumanMessage(content=msg["content"]))
       elif msg["role"] == "assistant":
         langchain_messages.append(AIMessage(content=msg["content"]))
-
     if langchain_messages:
       self._app.update_state(config, {"messages": langchain_messages})
 
   def _init_llm(self):
     raise NotImplementedError("Subclasses must implement _init_llm")
 
+  def _get_system_prompt(self) -> str:
+    current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return f"CURRENT SYSTEM DATE AND TIME: {current_datetime}\n\n{SYSTEM_PROMPT}"
+
   def _build_graph(self) -> StateGraph:
-    # Bind tools to LLM
     llm_with_tools = self._llm.bind_tools(self.tools)
+    tool_node = ToolNode(self.tools)
 
     def llm_node(state: MessagesState):
-      # Prepend the System Prompt to ensure the LLM always has instructions
-      # We do this here instead of adding it to the state to avoid duplication in memory
-      messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-      return {"messages": [llm_with_tools.invoke(messages)]}
+      try:
+        messages = [SystemMessage(content=self._get_system_prompt())] + state["messages"]
+        return {"messages": [llm_with_tools.invoke(messages)]}
+      except Exception as e:
+        logger.error(f"LLM Error: {e}", exc_info=True)
+        return {"messages": [AIMessage(content=f"An error occurred while generating the response or calling tools. Error details: {str(e)}")]}
 
-    def guard_node(state: MessagesState):
-      # Placeholder for guardrails if needed, or simple pass-through
-      # In KISS approach, we keep it simple for now
-      return state
-
-    workflow = StateGraph(MessagesState)
-
-    # Add nodes
-    # Custom tool node with logging
     async def tool_node_with_logging(state: MessagesState):
       last_message = state["messages"][-1]
-      if hasattr(last_message, "tool_calls"):
-        for tool_call in last_message.tool_calls:
-          logger.debug(f"Executing tool: {tool_call['name']} with args: {tool_call['args']}")
+      modified = False
 
-      # Use standard ToolNode logic
-      tool_node = ToolNode(self.tools)
-      return await tool_node.ainvoke(state)
+      if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        new_tool_calls = copy.deepcopy(last_message.tool_calls)
 
+        for tc in new_tool_calls:
+          if tc['name'].lower().replace('-', '_') in _COST_TOOL_NAMES_NORMALIZED:
+            for key in _STRINGIFY_KEYS:
+              if key in tc['args'] and not isinstance(tc['args'][key], str):
+                tc['args'][key] = json.dumps(tc['args'][key])
+                modified = True
+          logger.debug(f"Executing tool: {tc['name']} with args: {tc['args']}")
+
+        if modified:
+          new_message = AIMessage(
+              content=last_message.content,
+              tool_calls=new_tool_calls,
+              id=last_message.id,
+              additional_kwargs=last_message.additional_kwargs
+          )
+          state = {**state, "messages": state["messages"][:-1] + [new_message]}
+
+      result = await tool_node.ainvoke(state)
+
+      if "messages" in result and result["messages"]:
+          if modified:
+              result["messages"].insert(0, new_message)
+          for msg in result["messages"]:
+              logger.debug(f"Tool Result: {msg.name if hasattr(msg, 'name') else 'AIMessage'} -> {msg.content}")
+
+      return result
+
+    workflow = StateGraph(MessagesState)
     workflow.add_node("agent", llm_node)
     workflow.add_node("tools", tool_node_with_logging)
-
-    # Add edges
     workflow.add_edge(START, "agent")
-    # Conditional edge: agent -> tools (if tool call) OR agent -> END (if final answer)
     workflow.add_conditional_edges("agent", tools_condition)
-    # Edge: tools -> agent (loop back to agent after tool execution)
     workflow.add_edge("tools", "agent")
-
     return workflow
 
   async def stream_response(self, message: str, session_id: str, user_id: str, guardrails: Any = None):
     """Streams the response from the graph."""
-
-    logger.debug(f"Handling new message for user: {user_id}, message: {message}")
-
-    # Prepare initial state
-    # We only pass the NEW message. The graph loads history from the checkpointer.
     inputs = { "messages": [HumanMessage(content=message)] }
-
-    # Use session_id as thread_id for memory
     recursion_limit = int(os.environ.get("LANGGRAPH_RECURSION_LIMIT", "40"))
     config = {
         "configurable": { "thread_id": session_id, "user_id": user_id },
         "recursion_limit": recursion_limit
     }
 
-    # Run guardrails on input if provided
     if guardrails:
       try:
         guardrails.guard_input(session_id=session_id, user_id=user_id, text=message)
@@ -153,10 +192,54 @@ class BaseLangGraphClient:
         yield str(e)
         return
 
-    # Stream events using astream (messages mode) to get token-level streaming
-    async for msg, metadata in self._app.astream(inputs, config=config, stream_mode="messages"):
-      # Only stream from the agent node to avoid echoing tool outputs
-      if metadata.get("langgraph_node") == "agent":
-        # Yield only string content chunks
-        if msg.content and isinstance(msg.content, str):
-          yield msg.content
+    in_think_block = False
+    # Repetition detection: track recent lines, break if same line repeats 3+ times
+    recent_lines = deque(maxlen=10)
+
+    try:
+      prev_node = None
+      async for msg, metadata in self._app.astream(inputs, config=config, stream_mode="messages"):
+        current_node = metadata.get("langgraph_node")
+
+        # Newline separator when agent resumes after tool execution (preserves markdown headings)
+        if current_node == "agent" and prev_node == "tools":
+          yield "\n\n"
+
+        if current_node == "agent":
+          text = ""
+          if isinstance(msg.content, str):
+            text = msg.content
+          elif isinstance(msg.content, list):
+            text = "".join(
+              block.get("text", "") if isinstance(block, dict) else str(block)
+              for block in msg.content
+            )
+
+          if text:
+            # Filter <think> blocks
+            if in_think_block:
+              if "</think>" in text:
+                in_think_block = False
+                text = text.split("</think>", 1)[1]
+              else:
+                text = ""
+            if "<think>" in text:
+              in_think_block = True
+              text = text.split("<think>", 1)[0]
+
+            if text:
+              # Repetition detection on complete lines
+              for line in text.split('\n'):
+                stripped = line.strip()
+                if stripped:
+                  recent_lines.append(stripped)
+              if len(recent_lines) >= 6 and len(set(list(recent_lines)[-6:])) == 1:
+                yield "\n\n*(...output truncated — repetitive content detected)*"
+                break
+
+              yield text
+
+        prev_node = current_node
+    except Exception as e:
+      logger.error(f"Stream Error: {e}", exc_info=True)
+      yield f"\n\n**Error:** {str(e)}"

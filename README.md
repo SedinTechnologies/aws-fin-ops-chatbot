@@ -32,7 +32,7 @@ Follow these steps to get a local development environment running quickly so you
 ### Prerequisites
 
 * [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed.
-* Valid API Keys (Azure OpenAI) and appropriate AWS authentication credentials.
+* Valid API Keys (Azure OpenAI) or a local Ollama instance, and appropriate AWS authentication credentials.
 
 ### 1. Clone the Repository
 
@@ -69,7 +69,9 @@ The bot requires an AWS IAM Role (or User) with specific permissions to query yo
 
 ### 3. Configure Other Environment Variables
 
-The application relies on several other environment files (`llm.env`, `chainlit.env`, etc.). You must provide the correct keys/values before proceeding.
+The application relies on several other environment files located in the `secrets/` directory. You must provide the correct keys/values before proceeding.
+
+Navigate to the `secrets/` folder, copy the example files, and remove the `.example` extension (for instance, copy `aws.env.example` to `aws.env` and `llm.env.example` to `llm.env`), then add your actual values to the new files.
 
 > 📖 **Note:** For a comprehensive breakdown of all required configurations, see the **[Extended README](docs/EXTENDED_README.md)** documentation.
 
