@@ -18,7 +18,6 @@ Whether you want to analyze deep spending trends, correlate CloudWatch metrics t
 * **Flexible Model Integrations**: Currently, the bot natively integrates with both Azure OpenAI and local Ollama models. Furthermore, it is designed to be easily extendable to support other large enterprise models such as Claude or Gemini.
 * **Deep AWS API Integrations**: Broad coverage across the AWS ecosystem using specialized MCP servers like the API, Pricing, and Documentation tools.
 * **AWS Billing & Cost Management**: Break down costs by service, region, and tags. Instantly detect monthly spend trends, budget overages, and savings plans optimizations.
-* **Multiple LLM Backend Support**: Powered by either Azure OpenAI for enterprise-grade deployments or **Ollama** for a fully local open-source model setup.
 * **Security & Infrastructure Audits**: Access CloudTrail logs for auditing historical user events and query IaC configurations for compliance.
 * **Strict Domain-Bound Guardrails**: The bot enforces strict filtering policies to automatically reject non-AWS domain queries. Easily restrict query scopes via Account/Service allowlists.
 * **Interactive Chat UI**: Features fluid response streaming, rich Markdown formatting, and smart, quick-action follow-up suggestions for deeper investigation.

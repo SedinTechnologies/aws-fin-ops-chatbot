@@ -119,8 +119,8 @@ class BaseLangGraphClient:
     raise NotImplementedError("Subclasses must implement _init_llm")
 
   def _get_system_prompt(self) -> str:
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    return f"CURRENT SYSTEM DATE: {current_date}\n\n{SYSTEM_PROMPT}"
+    current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return f"CURRENT SYSTEM DATE AND TIME: {current_datetime}\n\n{SYSTEM_PROMPT}"
 
   def _build_graph(self) -> StateGraph:
     llm_with_tools = self._llm.bind_tools(self.tools)
